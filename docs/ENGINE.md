@@ -5,6 +5,14 @@ image buttons, context menus, dialogs, and file selectors. WebKitGTK supplies
 an embedded native WebKitWebView for each opened service. The app never starts
 Firefox, loads an extension, or renders its shell as an HTML page.
 
+The shell uses a 56 px sidebar at 640 × 460 logical pixels and above. Narrower
+or shorter windows use a 48 px bottom bar with 36 px buttons; all seven controls
+fit down to the 320 × 240 minimum. Initial windows and sign-in popups fit the
+monitor workarea. GTK handles display scaling. Resize notifications are
+coalesced, and layout changes run only when the mode changes. The same widgets
+and WebViews are kept; no navigation, zoom, or user-agent change is involved.
+Provider websites control their own page layouts.
+
 At startup no WebView or web-renderer process is created. A shared persistent
 website-data manager and WebKit context are created when the first service is
 opened. SQLite cookies, local storage, and website databases stay in the native

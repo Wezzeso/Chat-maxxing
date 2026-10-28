@@ -11,13 +11,13 @@ A small native messaging workspace for Linux. Built with Rust, GTK and WebKitGTK
 WhatsApp · Telegram · Instagram · LinkedIn · Gmail
 
 - **Native shell.** GTK window, menus and dialogs. Embedded WebKitGTK pages.
-- **Small interface.** Dark theme, 56 px sidebar, service logos.
+- **Adaptive interface.** A dark logo sidebar becomes a bottom bar in small windows.
 - **Fast switching.** Loaded pages stay ready; safe inactive pages sleep after ten minutes.
 - **Exit means exit.** Closing the window shuts down the app and its engine workers.
 
 ## Run
 
-[Download v0.3.1](https://github.com/Wezzeso/Chat-maxxing/releases/tag/v0.3.1)
+[Download v0.3.2](https://github.com/Wezzeso/Chat-maxxing/releases/tag/v0.3.2)
 for the Debian/Ubuntu installer or portable Linux package.
 
 The prebuilt app targets Linux x86-64. Requires GTK 3.24+, WebKitGTK 4.1
@@ -33,7 +33,7 @@ From the portable package:
 Or install the Debian/Ubuntu package:
 
 ```sh
-sudo apt install ./relay-native_0.3.1_amd64.deb
+sudo apt install ./relay-native_0.3.2_amd64.deb
 relay-native
 ```
 

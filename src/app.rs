@@ -2,6 +2,7 @@
 //! main thread; callbacks queue actions so nested native dialogs cannot borrow
 //! application state reentrantly. Each stored WebView has an explicit owned ref.
 use crate::ffi::*;
+use crate::layout::{self, Mode};
 use crate::model::{should_sleep, IDLE_DELAY, SERVICES};
 use crate::storage::{Config, InstanceLock, Storage};
 use crate::Options;
@@ -33,6 +34,8 @@ window#messages { background: #151618; color: #b7bbc3; }
 button.service, button.control { background: transparent; background-image: none;
  border: 0; border-radius: 6px; box-shadow: none; padding: 0; min-width: 44px; min-height: 44px; }
 button.service:hover, button.control:hover { background: #23262b; }
+ #rail.compact button.service, #rail.compact button.control {
+ min-width: 36px; min-height: 36px; border-radius: 5px; }
 button.service.selected { background: #292d33; }
 button.service.kept { box-shadow: inset 0 -2px #bda669; }
 button.control { color: #818894; }
@@ -90,6 +93,7 @@ enum Action {
     PopupClosed(Ptr),
     PopupCancelled,
     QaTick,
+    Resize(i32, i32),
 }
 
 struct Bridge {
@@ -98,6 +102,7 @@ struct Bridge {
     scheduled: Cell<bool>,
     busy: Cell<bool>,
     window: Cell<Ptr>,
+    size: Cell<(i32, i32)>,
     timers: [Cell<u32>; 5],
     intents: [Cell<u8>; 5],
 }
@@ -105,6 +110,7 @@ thread_local! {
     static BRIDGE: Bridge = Bridge {
         app: RefCell::new(None), queue: RefCell::new(VecDeque::new()),
         scheduled: Cell::new(false), busy: Cell::new(false), window: Cell::new(null_mut()),
+        size: Cell::new((0, 0)),
         timers: std::array::from_fn(|_| Cell::new(0)),
         intents: std::array::from_fn(|_| Cell::new(0)),
     };
@@ -122,9 +128,20 @@ fn enqueue(action: Action) {
 fn queue_action(queue: &mut VecDeque<Action>, action: Action) {
     let start = queue
         .iter()
-        .rposition(|queued| !matches!(queued, Action::Open(_) | Action::Changed(..)))
+        .rposition(|queued| {
+            !matches!(
+                queued,
+                Action::Open(_) | Action::Changed(..) | Action::Resize(..)
+            )
+        })
         .map_or(0, |index| index + 1);
     match &action {
+        Action::Resize(width, height) => {
+            if let Some(queued) = queue.iter_mut().skip(start).find(|queued| matches!(queued, Action::Resize(..))) {
+                *queued = Action::Resize(*width, *height);
+                return;
+            }
+        }
         Action::Open(_) => {
             let mut index = start;
             while index < queue.len() {
@@ -215,6 +232,9 @@ unsafe extern "C" fn idle_due(data: Ptr) -> Bool {
 
 struct App {
     window: Ptr,
+    row: Ptr,
+    controls: [Ptr; 2],
+    layout: Mode,
     rail: Ptr,
     stack: Ptr,
     empty: Ptr,
@@ -273,7 +293,9 @@ impl App {
         gtk_widget_set_name(window, c!("messages"));
         gtk_window_set_title(window, c!("Messages"));
         gtk_window_set_wmclass(window, c!("relay-native"), c!("RelayNative"));
-        gtk_window_set_default_size(window, 1100, 740);
+        let initial = window_size((1100, 740), null_mut());
+        gtk_window_set_default_size(window, initial.0, initial.1);
+        gtk_widget_set_size_request(window, layout::MIN_WIDTH, layout::MIN_HEIGHT);
         gtk_window_set_position(window, GTK_WIN_POS_CENTER);
         let row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
         gtk_container_add(window, row);
@@ -283,6 +305,8 @@ impl App {
         gtk_widget_set_size_request(rail, 56, -1);
         gtk_box_pack_start(row, rail, FALSE, TRUE, 0);
         let stack = gtk_stack_new();
+        gtk_stack_set_homogeneous(stack, FALSE);
+        atk_object_set_name(gtk_widget_get_accessible(stack), c!("Content"));
         gtk_stack_set_transition_type(stack, 0);
         gtk_widget_set_hexpand(stack, TRUE);
         gtk_widget_set_vexpand(stack, TRUE);
@@ -325,7 +349,8 @@ impl App {
         });
         let spacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         gtk_box_pack_start(rail, spacer, TRUE, TRUE, 0);
-        for (name, label, callback) in [
+        let mut controls = [null_mut(); 2];
+        for (index, (name, label, callback)) in [
             (
                 "weather-clear-night-symbolic",
                 "Sleep apps",
@@ -336,7 +361,10 @@ impl App {
                 "Quit",
                 quit_clicked as *const (),
             ),
-        ] {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let button = gtk_button_new();
             gtk_button_set_relief(button, GTK_RELIEF_NONE);
             gtk_style_context_add_class(gtk_widget_get_style_context(button), c!("control"));
@@ -347,13 +375,18 @@ impl App {
             gtk_button_set_always_show_image(button, TRUE);
             gtk_box_pack_start(rail, button, FALSE, FALSE, 0);
             connect(button, c!("clicked"), callback, 0);
+            controls[index] = button;
         }
+        connect(window, c!("size-allocate"), size_allocated as *const (), 0);
         connect(window, c!("delete-event"), delete_window as *const (), 0);
         connect(window, c!("destroy"), destroyed_window as *const (), 0);
         connect(window, c!("key-press-event"), key_pressed as *const (), 0);
         BRIDGE.with(|bridge| bridge.window.set(window));
-        Self {
+        let mut app = Self {
             window,
+            row,
+            controls,
+            layout: Mode::Sidebar,
             rail,
             stack,
             empty,
@@ -374,7 +407,51 @@ impl App {
                 .as_ref()
                 .map(|report| Qa::new(report.clone(), options.snapshot.clone())),
             title: "Messages".into(),
+        };
+        app.reflow(initial.0, initial.1);
+        app
+    }
+
+    unsafe fn reflow(&mut self, width: i32, height: i32) {
+        let mode = Mode::for_size(width, height);
+        if self.layout == mode {
+            return;
         }
+        self.layout = mode;
+        let compact = mode == Mode::BottomBar;
+        let style = gtk_widget_get_style_context(self.rail);
+        if compact {
+            gtk_style_context_add_class(style, c!("compact"));
+        } else {
+            gtk_style_context_remove_class(style, c!("compact"));
+        }
+        gtk_orientable_set_orientation(
+            self.row,
+            if compact {
+                GTK_ORIENTATION_VERTICAL
+            } else {
+                GTK_ORIENTATION_HORIZONTAL
+            },
+        );
+        gtk_orientable_set_orientation(
+            self.rail,
+            if compact {
+                GTK_ORIENTATION_HORIZONTAL
+            } else {
+                GTK_ORIENTATION_VERTICAL
+            },
+        );
+        gtk_box_set_spacing(self.rail, if compact { 2 } else { 6 });
+        gtk_widget_set_size_request(
+            self.rail,
+            if compact { -1 } else { 56 },
+            if compact { 48 } else { -1 },
+        );
+        for button in self.buttons.iter().chain(self.controls.iter()) {
+            let size = if compact { 36 } else { 44 };
+            gtk_widget_set_size_request(*button, size, size);
+        }
+        gtk_box_reorder_child(self.row, self.rail, if compact { -1 } else { 0 });
     }
 
     unsafe fn ensure_context(&mut self) {
@@ -782,6 +859,7 @@ impl App {
             }
             Action::PopupCancelled => self.quitting = false,
             Action::QaTick => self.qa_tick(),
+            Action::Resize(width, height) => self.reflow(width, height),
         }
     }
 
@@ -885,6 +963,42 @@ impl App {
                         qa.views = std::array::from_fn(|index| self.slots[index].view as usize);
                         qa.creates = std::array::from_fn(|index| self.slots[index].creates);
                         qa.loads = std::array::from_fn(|index| self.slots[index].loads);
+                        gtk_window_resize(self.window, 420, 640);
+                        qa.stage = 13;
+                    }
+                }
+            }
+            13..=16 => {
+                let sizes = [(420, 640), (320, 240), (1100, 320), (1100, 740)];
+                let index = (qa.stage - 13) as usize;
+                let (width, height) = sizes[index];
+                if gtk_widget_get_allocated_width(self.window) == width
+                    && gtk_widget_get_allocated_height(self.window) == height
+                    && self.layout == Mode::for_size(width, height)
+                {
+                    self.check_warm_views(&mut qa);
+                    let view = self.slots[self.active.expect("Fixture service is selected")].view;
+                    let expected = if self.layout == Mode::BottomBar {
+                        (width, height - 48)
+                    } else {
+                        (width - 56, height)
+                    };
+                    let actual = (
+                        gtk_widget_get_allocated_width(view),
+                        gtk_widget_get_allocated_height(view),
+                    );
+                    if actual != expected {
+                        qa.errors.push(format!(
+                            "Responsive WebView allocation: {actual:?}, expected {expected:?}"
+                        ));
+                    }
+                    qa.results.push(json!({"responsiveSize":[width,height],"contentSize":[actual.0,actual.1],"bottomBar":self.layout==Mode::BottomBar}));
+                    if index + 1 < sizes.len() {
+                        let next = sizes[index + 1];
+                        gtk_window_resize(self.window, next.0, next.1);
+                        qa.stage += 1;
+                    } else {
+                        qa.results.push(json!({"responsiveLayouts":4,"resizePreservedLoadedViews":qa.errors.is_empty(),"resizeExtraDocumentLoads":self.slots.iter().enumerate().map(|(index,slot)|slot.loads.saturating_sub(qa.loads[index])).sum::<u64>()}));
                         qa.stage = 9;
                     }
                 }
@@ -1104,6 +1218,36 @@ unsafe fn configure_view(view: Ptr) {
     );
     connect(view, c!("decide-policy"), decide_policy as *const (), 0);
 }
+unsafe extern "C" fn size_allocated(_: Ptr, allocation: *const Rectangle, _: Ptr) {
+    if let Some(allocation) = allocation.as_ref() {
+        let size = (allocation.width, allocation.height);
+        if BRIDGE.with(|bridge| bridge.size.replace(size) != size) {
+            enqueue(Action::Resize(size.0, size.1));
+        }
+    }
+}
+
+unsafe fn window_size(preferred: (i32, i32), parent: Ptr) -> (i32, i32) {
+    let display = gdk_display_get_default();
+    if display.is_null() {
+        return preferred;
+    }
+    let mut monitor = if !parent.is_null() && gtk_widget_get_realized(parent) != FALSE {
+        gdk_display_get_monitor_at_window(display, gtk_widget_get_window(parent))
+    } else {
+        gdk_display_get_primary_monitor(display)
+    };
+    if monitor.is_null() && gdk_display_get_n_monitors(display) > 0 {
+        monitor = gdk_display_get_monitor(display, 0);
+    }
+    if monitor.is_null() {
+        return preferred;
+    }
+    let mut area = Rectangle::default();
+    gdk_monitor_get_workarea(monitor, &mut area);
+    layout::initial_size(area.width, area.height, preferred)
+}
+
 unsafe extern "C" fn service_clicked(_: Ptr, data: Ptr) {
     enqueue(Action::Open(data as usize));
 }
@@ -1280,7 +1424,9 @@ unsafe extern "C" fn popup_create(parent: Ptr, _: Ptr, _: Ptr) -> Ptr {
     let window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     g_object_ref_sink(window);
     gtk_window_set_title(window, c!("Sign in"));
-    gtk_window_set_default_size(window, 780, 680);
+    let initial = window_size((780, 680), root);
+    gtk_window_set_default_size(window, initial.0, initial.1);
+    gtk_widget_set_size_request(window, layout::MIN_WIDTH, layout::MIN_HEIGHT);
     gtk_window_set_transient_for(window, root);
     gtk_window_set_destroy_with_parent(window, TRUE);
     gtk_container_add(window, view);
@@ -1460,6 +1606,19 @@ mod queue_tests {
         queue_action(&mut queue, Action::Open(4));
         assert_eq!(queue.len(), 2);
         assert!(matches!(queue.back(), Some(Action::Open(4))));
+    }
+
+    #[test]
+    fn resize_events_coalesce_and_keep_lifecycle_order() {
+        let mut queue = VecDeque::new();
+        queue_action(&mut queue, Action::Resize(1100, 740));
+        queue_action(&mut queue, Action::Open(1));
+        queue_action(&mut queue, Action::Resize(320, 240));
+        assert_eq!(queue.len(), 2);
+        assert!(matches!(queue.front(), Some(Action::Resize(320, 240))));
+        queue_action(&mut queue, Action::Quit);
+        queue_action(&mut queue, Action::Resize(420, 640));
+        assert_eq!(queue.len(), 4);
     }
 
     #[test]

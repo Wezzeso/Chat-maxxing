@@ -94,7 +94,10 @@ def capture_window(window, destination):
     foreign = GdkX11.X11Window.foreign_new_for_display(display, int(window["id"], 16))
     if foreign is None:
         raise RuntimeError("The application's X11 window disappeared")
-    width, height = foreign.get_width(), foreign.get_height()
+    # Foreign GDK windows cache their first allocation across later X11 resizes.
+    # Use the freshly measured client rectangle to capture only this window.
+    width, height = window["width"], window["height"]
+    display.sync()
     pixbuf = Gdk.pixbuf_get_from_window(foreign, 0, 0, width, height)
     if pixbuf is None:
         raise RuntimeError("GDK could not capture the application's own window")
@@ -327,6 +330,8 @@ def run_self_test(binary, output):
     for expected in ["retainedAfter35Seconds", "longIdleViewDestroyed", "latestSelectionWins"]:
         if facts.get(expected) is not True:
             raise RuntimeError("Native switching fixture did not confirm " + expected)
+    if facts.get("responsiveLayouts") != 4 or facts.get("resizePreservedLoadedViews") is not True or facts.get("resizeExtraDocumentLoads") != 0:
+        raise RuntimeError("Native resizing fixture recreated or reloaded a view")
     if facts.get("warmSwitches") != 40 or facts.get("warmExtraDocumentLoads") != 0:
         raise RuntimeError("Native switching fixture reloaded warm pages")
     if report.get("ok") is False or report.get("passed") is False or report.get("failures") or report.get("errors"):

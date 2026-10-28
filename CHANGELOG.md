@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2
+
+- Adapt the native sidebar into a compact bottom bar on narrow or short windows.
+- Keep all seven controls visible down to 320 × 240 logical pixels.
+- Fit the initial main window and sign-in popups to the monitor workarea.
+- Preserve loaded WebViews and their state while resizing.
+- Verify six empty-window layouts and four loaded-page resize transitions.
+
 ## 0.3.1
 
 - Replace the 30-second unload window with a ten-minute grace period.

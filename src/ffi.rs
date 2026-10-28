@@ -34,6 +34,15 @@ pub struct Rgba {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Rectangle {
+    pub x: c_int,
+    pub y: c_int,
+    pub width: c_int,
+    pub height: c_int,
+}
+
+#[repr(C)]
 pub struct GError {
     pub domain: c_uint,
     pub code: c_int,
@@ -127,6 +136,9 @@ extern "C" {
     pub fn gtk_window_resize(window: Ptr, width: c_int, height: c_int);
     pub fn gtk_window_close(window: Ptr);
     pub fn gtk_box_new(orientation: c_int, spacing: c_int) -> Ptr;
+    pub fn gtk_box_set_spacing(container: Ptr, spacing: c_int);
+    pub fn gtk_box_reorder_child(container: Ptr, child: Ptr, position: c_int);
+    pub fn gtk_orientable_set_orientation(orientable: Ptr, orientation: c_int);
     pub fn gtk_box_pack_start(
         container: Ptr,
         child: Ptr,
@@ -148,6 +160,7 @@ extern "C" {
     pub fn gtk_label_set_xalign(label: Ptr, xalign: f32);
     pub fn gtk_label_set_line_wrap(label: Ptr, wrap: Bool);
     pub fn gtk_stack_new() -> Ptr;
+    pub fn gtk_stack_set_homogeneous(stack: Ptr, homogeneous: Bool);
     pub fn gtk_stack_add_named(stack: Ptr, child: Ptr, name: *const c_char);
     pub fn gtk_stack_set_visible_child(stack: Ptr, child: Ptr);
     pub fn gtk_stack_set_visible_child_name(stack: Ptr, name: *const c_char);
@@ -234,6 +247,12 @@ extern "C" {
 #[link(name = "libgdk-3.so.0", kind = "dylib", modifiers = "+verbatim")]
 extern "C" {
     pub fn gdk_screen_get_default() -> Ptr;
+    pub fn gdk_display_get_default() -> Ptr;
+    pub fn gdk_display_get_primary_monitor(display: Ptr) -> Ptr;
+    pub fn gdk_display_get_monitor_at_window(display: Ptr, window: Ptr) -> Ptr;
+    pub fn gdk_display_get_n_monitors(display: Ptr) -> c_int;
+    pub fn gdk_display_get_monitor(display: Ptr, index: c_int) -> Ptr;
+    pub fn gdk_monitor_get_workarea(monitor: Ptr, workarea: *mut Rectangle);
     pub fn gdk_event_get_button(event: Ptr, button: *mut c_uint) -> Bool;
     pub fn gdk_event_get_keyval(event: Ptr, keyval: *mut c_uint) -> Bool;
     pub fn gdk_event_get_state(event: Ptr, state: *mut c_uint) -> Bool;
