@@ -377,6 +377,17 @@ extern "C" {
         storage: c_int,
     );
     pub fn webkit_web_view_new_with_context(context: Ptr) -> Ptr;
+    pub fn webkit_web_view_get_user_content_manager(view: Ptr) -> Ptr;
+    pub fn webkit_user_script_new_for_world(
+        source: *const c_char,
+        injected_frames: c_int,
+        injection_time: c_int,
+        world_name: *const c_char,
+        allow_list: *const *const c_char,
+        block_list: *const *const c_char,
+    ) -> Ptr;
+    pub fn webkit_user_content_manager_add_script(manager: Ptr, script: Ptr);
+    pub fn webkit_user_script_unref(script: Ptr);
     pub fn webkit_web_view_new_with_related_view(view: Ptr) -> Ptr;
     pub fn webkit_web_view_load_uri(view: Ptr, uri: *const c_char);
     pub fn webkit_web_view_load_html(view: Ptr, content: *const c_char, base_uri: *const c_char);

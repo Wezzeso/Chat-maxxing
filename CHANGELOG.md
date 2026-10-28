@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.4
+
+- Replace WhatsApp page scaling with a single-pane layout at widths of 748 CSS pixels or less; keep zoom at 100%.
+- Show the chat list or selected chat at full width, with a back arrow to return to the retained list and both panes restored in wide windows.
+- Keep the existing document, chat pane, and composer mounted across layout changes.
+- Add the default-enabled native **Single pane** toggle; discard the previous fit-width preference.
+- Run the structural layout observer only while the narrow WhatsApp view is visible, without polling or additional WebViews.
+- Fall back to the regular provider page when the expected DOM hooks are unavailable; signed-in WhatsApp remains unverified.
+
 ## 0.3.3
 
 - Fit WhatsApp's desktop layout into narrow windows using measured whole-page zoom; restore 100% in wide windows.

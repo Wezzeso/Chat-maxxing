@@ -54,8 +54,9 @@ Native Linux preview built from commit $GITHUB_SHA.
 - Minimal dark logo sidebar; service pages load on demand.
 - Loaded views stay ready for ten minutes after switching away.
 - Sidebar becomes a compact bottom bar in narrow or short windows.
-- WhatsApp desktop content scales to fit narrow windows and returns to normal size when widened.
-- Right-click the WhatsApp logo to toggle Fit width.
+- WhatsApp shows one full-width pane at a time in narrow windows, at 100% zoom.
+- Open a chat and use the back arrow to return to the list; wide windows restore both panes.
+- Right-click the WhatsApp logo to toggle Single pane, enabled by default.
 - Closing the window exits the app and its engine workers.
 
 Downloads: Debian/Ubuntu installer, portable Linux x86-64 archive, and SHA256 checksums.
@@ -63,6 +64,7 @@ Requires GTK 3.24+, WebKitGTK 4.1 (WebKit 2.42+), and glibc 2.34+.
 
 Account sign-in, messaging, calls, and provider authentication flows remain unverified.
 Providers may restrict embedded browsers, particularly Google account sign-in.
+The WhatsApp layout adapter uses undocumented page structure and falls back to the regular page when its expected hooks are unavailable.
 NOTES
 gh release create "$relay_tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
   --title "$relay_tag — Native Linux preview" --prerelease \

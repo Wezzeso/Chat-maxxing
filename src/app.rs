@@ -5,7 +5,6 @@ use crate::ffi::*;
 use crate::layout::{self, Mode};
 use crate::model::{should_sleep, IDLE_DELAY, SERVICES};
 use crate::storage::{Config, InstanceLock, Storage};
-use crate::viewport::{Fit, Geometry};
 use crate::Options;
 use serde_json::{json, Value};
 use std::cell::{Cell, RefCell};
@@ -44,30 +43,8 @@ label#empty { color: #686e79; font: 12px sans-serif; }
 menu { background: #202328; color: #bdc2cb; }
 ";
 
-// Only dimensions of the document and a bounded set of app layout wrappers.
-// The isolated script never reads messages, form values, or account details.
-const VIEWPORT_PROBE: &str = r#"(() => {
-    const root = document.documentElement;
-    if (!root) return null;
-    let width = Math.max(root.scrollWidth, document.body?.scrollWidth || 0);
-    let layer = [document.getElementById('app')].filter(Boolean);
-    let count = 0;
-    for (let depth = 0; depth < 4 && layer.length && count < 32; depth++) {
-        const next = [];
-        for (const node of layer) {
-            if (++count > 32) break;
-            const rect = node.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) continue;
-            width = Math.max(width, rect.width, node.scrollWidth);
-            for (const child of node.children) {
-                if (next.length < 16) next.push(child);
-            }
-        }
-        layer = next;
-    }
-    const geometry = {viewport: innerWidth, client: root.clientWidth, content: width};
-    return JSON.stringify(geometry);
-})()"#;
+// Applied only to the main WhatsApp view, in a separate JavaScript world.
+const WHATSAPP_ADAPTER: &str = include_str!("whatsapp.js");
 
 #[derive(Clone, Copy, PartialEq)]
 enum CloseReason {
@@ -86,13 +63,6 @@ struct Slot {
     creates: u64,
     loads: u64,
     focuses: u64,
-    fit: Fit,
-    fit_epoch: u64,
-    fit_size: (i32, i32),
-    fit_in_flight: bool,
-    fit_budget: u8,
-    fit_geometry: Option<Geometry>,
-    fixture_draft: Option<String>,
 }
 impl Slot {
     fn new(index: usize) -> Self {
@@ -106,13 +76,6 @@ impl Slot {
             creates: 0,
             loads: 0,
             focuses: 0,
-            fit: Fit::default(),
-            fit_epoch: 0,
-            fit_size: (0, 0),
-            fit_in_flight: false,
-            fit_budget: 0,
-            fit_geometry: None,
-            fixture_draft: None,
         }
     }
 }
@@ -134,25 +97,18 @@ enum Action {
     PopupCancelled,
     QaTick,
     Resize(i32, i32),
-    Fit(usize, Ptr),
-    Measured(ProbeReply),
-    FitEnabled(bool),
+    Adapt(usize, Ptr),
+    QaPage(PageReply),
+    Compact(bool),
 }
 
-struct Probe {
-    index: usize,
+struct PageProbe {
     view: Ptr,
     document: u64,
-    epoch: u64,
-    size: (i32, i32),
-    zoom: f64,
-    fixture: bool,
 }
-
-struct ProbeReply {
-    probe: Probe,
-    geometry: Option<Geometry>,
-    fixture_draft: Option<String>,
+struct PageReply {
+    probe: PageProbe,
+    state: Option<Value>,
 }
 
 struct Bridge {
@@ -190,7 +146,7 @@ fn queue_action(queue: &mut VecDeque<Action>, action: Action) {
         .rposition(|queued| {
             !matches!(
                 queued,
-                Action::Open(_) | Action::Changed(..) | Action::Resize(..) | Action::Fit(..)
+                Action::Open(_) | Action::Changed(..) | Action::Resize(..) | Action::Adapt(..)
             )
         })
         .map_or(0, |index| index + 1);
@@ -218,9 +174,9 @@ fn queue_action(queue: &mut VecDeque<Action>, action: Action) {
         {
             return;
         }
-        Action::Fit(index, view)
+        Action::Adapt(index, view)
             if queue.iter().skip(start).any(|queued| {
-                matches!(queued, Action::Fit(other, pointer) if other == index && pointer == view)
+                matches!(queued, Action::Adapt(other, pointer) if other == index && pointer == view)
             }) =>
         {
             return;
@@ -556,13 +512,25 @@ impl App {
         let view = webkit_web_view_new_with_context(self.context);
         g_object_ref_sink(view);
         configure_view(view);
+        if index == 0 {
+            // Keep the named world alive between evaluations. A no-op anchor
+            // cannot adapt related sign-in popups that share this manager.
+            let allowed = [c!("https://web.whatsapp.com/*"), null()];
+            let anchor = webkit_user_script_new_for_world(
+                c!("void 0;"),
+                1,
+                1,
+                c!("relay-whatsapp"),
+                allowed.as_ptr(),
+                null(),
+            );
+            webkit_user_content_manager_add_script(
+                webkit_web_view_get_user_content_manager(view),
+                anchor,
+            );
+            webkit_user_script_unref(anchor);
+        }
         connect(view, c!("load-changed"), load_changed as *const (), index);
-        connect(
-            view,
-            c!("size-allocate"),
-            view_allocated as *const (),
-            index,
-        );
         connect(view, c!("notify::uri"), view_changed as *const (), index);
         connect(
             view,
@@ -635,21 +603,10 @@ impl App {
             let view = self.create_view(index);
             if self.test_mode {
                 let (html, base) = if index == 0 {
-                    // Deliberately hide overflow at the root: the probe must
-                    // find the nested desktop layout rather than scrollWidth
-                    // on documentElement alone. No provider account is used.
-                    (r#"<!doctype html><meta name="color-scheme" content="dark">
-                    <title>Fixture 0</title><style>
-                    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111b21;color:#e9edef;font:18px sans-serif}
-                    #app{width:100vw;height:100vh;overflow:hidden}
-                    .desktop{display:flex;min-width:748px;width:100%;height:100%}
-                    aside{box-sizing:border-box;flex:0 0 240px;background:#202c33;padding:24px}
-                    main{box-sizing:border-box;flex:1;min-width:0;padding:24px;display:flex;flex-direction:column;justify-content:space-between}
-                    form{display:flex;gap:12px}input{flex:1;min-width:0;padding:14px;border:0;border-radius:8px;background:#2a3942;color:inherit;font:inherit}
-                    button{border:0;border-radius:8px;background:#00a884;color:#fff;padding:14px;font:inherit}
-                    </style><div id="app"><div class="desktop"><aside>Chats</aside><main><span>Local viewport fixture</span><form><input id="relay-fixture-draft"><button>Send</button></form></main></div></div>
-                    <script>document.getElementById('relay-fixture-draft').value='retained draft';localStorage.setItem('relay-test','persisted');</script>"#.to_owned(),
-                    "https://web.whatsapp.com/relay-fixture/")
+                    (
+                        include_str!("../tests/fixtures/whatsapp.html").to_owned(),
+                        "https://web.whatsapp.com/relay-fixture/",
+                    )
                 } else {
                     (format!("<!doctype html><meta name='color-scheme' content='dark'><title>Fixture {index}</title><body style='background:#151618;color:#bbc0c8'>Native embedded WebKit fixture {index}<script>localStorage.setItem('relay-test','persisted');</script>"),
                     "https://relay-fixture.invalid/")
@@ -669,133 +626,69 @@ impl App {
         }
         self.paint();
         if index == 0 {
-            self.slots[index].fit_budget = 3;
-            enqueue(Action::Fit(index, self.slots[index].view));
+            enqueue(Action::Adapt(index, self.slots[index].view));
         }
     }
 
-    unsafe fn reset_fit(&mut self, index: usize) {
-        let slot = &mut self.slots[index];
-        slot.fit_epoch = slot.fit_epoch.wrapping_add(1);
-        slot.fit.reset();
-        slot.fit_size = (0, 0);
-        slot.fit_budget = 0;
-        slot.fit_in_flight = false;
-        slot.fit_geometry = None;
-        slot.fixture_draft = None;
-        if index == 0
-            && !slot.view.is_null()
-            && (webkit_web_view_get_zoom_level(slot.view) - 1.0).abs() > 0.001
-        {
-            webkit_web_view_set_zoom_level(slot.view, 1.0);
+    unsafe fn adapt_whatsapp(&self, index: usize, view: Ptr) {
+        if index != 0 || self.quitting || view.is_null() || self.slots[index].view != view {
+            return;
         }
-    }
-
-    unsafe fn fit_view(&mut self, index: usize, view: Ptr) {
-        if index != 0
-            || self.quitting
-            || self.active != Some(index)
-            || view.is_null()
-            || self.slots[index].view != view
+        // Never reduce page or text zoom. The adapter only changes pane layout.
+        if (webkit_web_view_get_zoom_level(view) - 1.0).abs() > 0.001 {
+            webkit_web_view_set_zoom_level(view, 1.0);
+        }
+        if webkit_web_view_is_loading(view) != FALSE
+            || !SERVICES[0].owns_uri(&text(webkit_web_view_get_uri(view)))
         {
             return;
         }
-        let uri = text(webkit_web_view_get_uri(view));
-        if !self.config.fit_whatsapp || !SERVICES[0].owns_uri(&uri) {
-            self.reset_fit(index);
-            return;
-        }
-        if webkit_web_view_is_loading(view) != FALSE {
-            return;
-        }
-        let size = (
-            gtk_widget_get_allocated_width(view),
-            gtk_widget_get_allocated_height(view),
+        let script = format!(
+            "{WHATSAPP_ADAPTER}; globalThis.relayWhatsApp?.enable({}); null;",
+            self.config.compact_whatsapp
         );
-        if size.0 <= 0 || size.1 <= 0 {
-            return;
-        }
-        let slot = &mut self.slots[index];
-        if slot.fit_size != size {
-            slot.fit_size = size;
-            slot.fit_budget = 3;
-            slot.fit_geometry = None;
-        }
-        let desired = slot.fit.zoom(size.0);
-        if (webkit_web_view_get_zoom_level(view) - desired).abs() > 0.001 {
-            webkit_web_view_set_zoom_level(view, desired);
-        }
-        if slot.fit_in_flight || slot.fit_budget == 0 {
-            return;
-        }
-        slot.fit_in_flight = true;
-        slot.fit_budget -= 1;
-        let probe = Box::new(Probe {
-            index,
-            view,
-            document: slot.loads,
-            epoch: slot.fit_epoch,
-            size,
-            zoom: webkit_web_view_get_zoom_level(view),
-            fixture: self.test_mode,
-        });
-        let script = if self.test_mode {
-            VIEWPORT_PROBE.replace("return JSON.stringify(geometry);",
-                "geometry.fixtureDraft = document.getElementById('relay-fixture-draft')?.value; return JSON.stringify(geometry);")
-        } else {
-            VIEWPORT_PROBE.into()
-        };
-        let script = cs(&script);
+        self.evaluate(view, &script, Some(evaluated), null_mut());
+    }
+
+    unsafe fn evaluate(&self, view: Ptr, script: &str, callback: GAsyncReadyCallback, data: Ptr) {
         webkit_web_view_evaluate_javascript(
             view,
-            script.as_ptr(),
+            cs(script).as_ptr(),
             -1,
-            c!("relay-viewport"),
+            c!("relay-whatsapp"),
             null(),
             null_mut(),
-            Some(viewport_measured),
-            Box::into_raw(probe).cast(),
+            callback,
+            data,
         );
     }
 
-    unsafe fn measured(&mut self, reply: ProbeReply) {
-        let probe = reply.probe;
-        let slot = &mut self.slots[probe.index];
-        if slot.view != probe.view || slot.loads != probe.document || slot.fit_epoch != probe.epoch
-        {
+    // Only the local self-test reads its own fixture field and identities.
+    unsafe fn qa_page(&self, qa: &mut Qa) {
+        if qa.page_pending || !self.test_mode {
             return;
         }
-        slot.fit_in_flight = false;
-        if self.active != Some(probe.index) || self.quitting || !self.config.fit_whatsapp {
-            return;
-        }
-        if !SERVICES[0].owns_uri(&text(webkit_web_view_get_uri(probe.view))) {
-            self.reset_fit(probe.index);
-            return;
-        }
-        if webkit_web_view_is_loading(probe.view) != FALSE {
-            return;
-        }
-        let size = (
-            gtk_widget_get_allocated_width(probe.view),
-            gtk_widget_get_allocated_height(probe.view),
-        );
-        let zoom = webkit_web_view_get_zoom_level(probe.view);
-        if size != probe.size || (zoom - probe.zoom).abs() > 0.002 {
-            enqueue(Action::Fit(probe.index, probe.view));
-            return;
-        }
-        if let Some(geometry) = reply.geometry.filter(Geometry::valid) {
-            slot.fit_geometry = Some(geometry);
-            slot.fixture_draft = reply.fixture_draft;
-            let overflow = slot.fit.observe(geometry, probe.zoom);
-            let desired = slot.fit.zoom(size.0);
-            if overflow && desired < zoom - 0.001 {
-                webkit_web_view_set_zoom_level(probe.view, desired);
-                slot.fit_geometry = None;
-                enqueue(Action::Fit(probe.index, probe.view));
-            }
-        }
+        qa.page_pending = true;
+        let probe = Box::new(PageProbe {
+            view: self.slots[0].view,
+            document: self.slots[0].loads,
+        });
+        self.evaluate(probe.view, r#"(() => {
+            const box = id => {
+                const node = document.getElementById(id);
+                if (!node) return {visible:false,width:0,x:0};
+                const rect = node.getBoundingClientRect();
+                const visible = rect.width > 0 && rect.height > 0 && getComputedStyle(node).visibility !== 'hidden';
+                return {visible,width:rect.width,x:rect.x};
+            };
+            const input = document.getElementById('relay-fixture-draft');
+            return JSON.stringify({viewport:innerWidth,rootWidth:document.documentElement.scrollWidth,
+                list:box('side'),chat:box('main'),back:box('relay-wa-back'),
+                backCount:document.querySelectorAll('#relay-wa-back').length,
+                font:input?parseFloat(getComputedStyle(input).fontSize):null,
+                draft:input?.value,identity:document.getElementById('main')?.dataset.fixtureIdentity,
+                adapter:globalThis.relayWhatsApp?.status()});
+        })()"#, Some(page_measured), Box::into_raw(probe).cast());
     }
 
     unsafe fn paint(&mut self) {
@@ -912,7 +805,6 @@ impl App {
             slot.uri = uri;
         }
         slot.view = null_mut();
-        slot.fit_epoch = slot.fit_epoch.wrapping_add(1);
         slot.intent = None;
         BRIDGE.with(|bridge| bridge.intents[index].set(0));
         slot.crashed = false;
@@ -1002,7 +894,6 @@ impl App {
             Action::LoadStarted(index, view) => {
                 if self.slots[index].view == view {
                     self.slots[index].loads += 1;
-                    self.reset_fit(index);
                 }
             }
             Action::Closed(index, view) => {
@@ -1077,15 +968,24 @@ impl App {
             Action::PopupCancelled => self.quitting = false,
             Action::QaTick => self.qa_tick(),
             Action::Resize(width, height) => self.reflow(width, height),
-            Action::Fit(index, view) => self.fit_view(index, view),
-            Action::Measured(reply) => self.measured(reply),
-            Action::FitEnabled(value) => {
-                self.config.fit_whatsapp = value;
+            Action::Adapt(index, view) => self.adapt_whatsapp(index, view),
+            Action::QaPage(reply) => {
+                if self.test_mode
+                    && self.slots[0].view == reply.probe.view
+                    && self.slots[0].loads == reply.probe.document
+                {
+                    if let Some(qa) = &mut self.qa {
+                        qa.page_pending = false;
+                        qa.page_state = reply.state;
+                    }
+                }
+            }
+            Action::Compact(value) => {
+                self.config.compact_whatsapp = value;
                 if let Err(error) = self.storage.save_config(&self.config) {
                     eprintln!("Preferences: {error}");
                 }
-                self.reset_fit(0);
-                enqueue(Action::Fit(0, self.slots[0].view));
+                enqueue(Action::Adapt(0, self.slots[0].view));
             }
         }
     }
@@ -1196,80 +1096,141 @@ impl App {
                     }
                 }
             }
-            13..=16 => {
-                let sizes = [(420, 640), (320, 240), (1100, 320), (1100, 740)];
-                let index = (qa.stage - 13) as usize;
-                let (width, height) = sizes[index];
+            13..=24 => {
+                let (width, height) = match qa.stage {
+                    17 | 18 => (320, 640),
+                    19 => (1100, 320),
+                    20 | 24 => (1100, 740),
+                    _ => (420, 640),
+                };
+                let view = self.slots[0].view;
+                let expected = if Mode::for_size(width, height) == Mode::BottomBar {
+                    (width, height - 48)
+                } else {
+                    (width - 56, height)
+                };
                 if gtk_widget_get_allocated_width(self.window) == width
                     && gtk_widget_get_allocated_height(self.window) == height
-                    && self.layout == Mode::for_size(width, height)
-                    && self.slots[0].fit_geometry.is_some()
-                    && !self.slots[0].fit_in_flight
-                    && self.slots[0].fit_size
-                        == (
-                            gtk_widget_get_allocated_width(self.slots[0].view),
-                            gtk_widget_get_allocated_height(self.slots[0].view),
-                        )
+                    && gtk_widget_get_allocated_width(view) == expected.0
+                    && gtk_widget_get_allocated_height(view) == expected.1
                 {
-                    self.check_warm_views(&mut qa);
-                    let view = self.slots[self.active.expect("Fixture service is selected")].view;
-                    let expected = if self.layout == Mode::BottomBar {
-                        (width, height - 48)
-                    } else {
-                        (width - 56, height)
-                    };
-                    let actual = (
-                        gtk_widget_get_allocated_width(view),
-                        gtk_widget_get_allocated_height(view),
-                    );
-                    if actual != expected {
-                        qa.errors.push(format!(
-                            "Responsive WebView allocation: {actual:?}, expected {expected:?}"
-                        ));
-                    }
-                    let geometry = self.slots[0]
-                        .fit_geometry
-                        .expect("Fixture geometry is ready");
-                    let zoom = webkit_web_view_get_zoom_level(view);
-                    if geometry.overflows() {
-                        qa.errors.push(format!(
-                            "WhatsApp fixture is clipped at {width}: {geometry:?}"
-                        ));
-                    }
-                    if (width < 748 && zoom >= 1.0) || (width >= 748 && (zoom - 1.0).abs() > 0.001)
-                    {
-                        qa.errors
-                            .push(format!("Unexpected WhatsApp zoom at {width}: {zoom}"));
-                    }
-                    if self.slots[0].fixture_draft.as_deref() != Some("retained draft") {
-                        qa.errors.push("Resizing lost the fixture draft".into());
-                    }
-                    if self.slots[1..]
-                        .iter()
-                        .any(|slot| (webkit_web_view_get_zoom_level(slot.view) - 1.0).abs() > 0.001)
-                    {
-                        qa.errors
-                            .push("WhatsApp fit changed another service's zoom".into());
-                    }
-                    qa.results.push(json!({"responsiveSize":[width,height],"contentSize":[actual.0,actual.1],"bottomBar":self.layout==Mode::BottomBar,
-                        "whatsappZoom":zoom,"documentWidth":geometry.client,"layoutWidth":geometry.content}));
-                    if index == 0 {
-                        if let Some(path) = &qa.snapshot {
-                            if let Err(error) =
-                                self.snapshot(&path.with_file_name("whatsapp-portrait.png"))
+                    if let Some(state) = qa.page_state.take() {
+                        if (state["viewport"].as_f64().unwrap_or_default() - expected.0 as f64)
+                            .abs()
+                            > 2.0
+                        {
+                            self.qa_page(&mut qa);
+                        } else {
+                            self.check_warm_views(&mut qa);
+                            let chat = matches!(qa.stage, 14 | 16 | 17 | 18 | 21 | 23);
+                            let list = matches!(qa.stage, 13 | 15);
+                            let enabled = qa.stage != 22;
+                            let visible =
+                                |pane: &str| state[pane]["visible"].as_bool().unwrap_or(false);
+                            if visible("chat") != !list || visible("list") != !chat {
+                                qa.errors.push(format!(
+                                    "Single-pane visibility at step {}: {state}",
+                                    qa.stage
+                                ));
+                            }
+                            if (chat || list)
+                                && (state[if chat { "chat" } else { "list" }]["width"]
+                                    .as_f64()
+                                    .unwrap_or_default()
+                                    - expected.0 as f64)
+                                    .abs()
+                                    > 2.0
                             {
-                                qa.errors.push(error);
+                                qa.errors.push(format!(
+                                    "Active pane does not fill viewport at step {}",
+                                    qa.stage
+                                ));
+                            }
+                            if state["adapter"].is_null() {
+                                qa.errors
+                                    .push("Named script world did not retain its adapter".into());
+                            }
+                            if state["backCount"].as_u64() != Some(u64::from(chat)) {
+                                qa.errors.push(format!(
+                                    "Duplicate or stale Back button at step {}",
+                                    qa.stage
+                                ));
+                            }
+                            if visible("back") != chat {
+                                qa.errors
+                                    .push(format!("Back button visibility at step {}", qa.stage));
+                            }
+                            if enabled
+                                && state["rootWidth"].as_f64().unwrap_or(f64::MAX)
+                                    > expected.0 as f64 + 2.0
+                            {
+                                qa.errors
+                                    .push(format!("Page overflows at step {}: {state}", qa.stage));
+                            }
+                            if qa.stage > 13 && state["font"].as_f64().unwrap_or_default() < 18.0 {
+                                qa.errors
+                                    .push("Single pane shrank the composer font".into());
+                            }
+                            if qa.stage >= 15 && state["draft"].as_str() != Some("retained draft") {
+                                qa.errors
+                                    .push("Single-pane navigation lost the draft".into());
+                            }
+                            if (15..=17).contains(&qa.stage)
+                                && state["identity"].as_str() != Some("1")
+                            {
+                                qa.errors
+                                    .push("Back/reopen replaced the retained conversation".into());
+                            }
+                            if qa.stage >= 18 && state["identity"].as_str() != Some("2") {
+                                qa.errors.push(
+                                    "Adapter did not recover from SPA conversation replacement"
+                                        .into(),
+                                );
+                            }
+                            if self.slots.iter().any(|slot| {
+                                (webkit_web_view_get_zoom_level(slot.view) - 1.0).abs() > 0.001
+                            }) {
+                                qa.errors
+                                    .push("Single-pane navigation changed native page zoom".into());
+                            }
+                            qa.results.push(json!({"singlePaneStep":qa.stage,"windowSize":[width,height],"page":state,"zoom":webkit_web_view_get_zoom_level(view)}));
+                            if matches!(qa.stage, 14 | 17) {
+                                if let Some(path) = &qa.snapshot {
+                                    let name = if qa.stage == 14 {
+                                        "whatsapp-chat-420.png"
+                                    } else {
+                                        "whatsapp-chat-320.png"
+                                    };
+                                    if let Err(error) = self.snapshot(&path.with_file_name(name)) {
+                                        qa.errors.push(error);
+                                    }
+                                }
+                            }
+                            match qa.stage {
+                                13 | 15 => self.evaluate(view,"document.getElementById('relay-chat-row').click(); null;",Some(evaluated),null_mut()),
+                                14 => self.evaluate(view,"document.getElementById('relay-fixture-draft').value='retained draft'; document.getElementById('relay-wa-back')?.click(); document.getElementById('relay-row-menu').click(); null;",Some(evaluated),null_mut()),
+                                16 => gtk_window_resize(self.window,320,640),
+                                17 => self.evaluate(view,"document.getElementById('relay-fixture-replace').click(); null;",Some(evaluated),null_mut()),
+                                18 => gtk_window_resize(self.window,1100,320),
+                                19 => gtk_window_resize(self.window,1100,740),
+                                20 => gtk_window_resize(self.window,420,640),
+                                21 => enqueue(Action::Compact(false)),
+                                22 => enqueue(Action::Compact(true)),
+                                23 => gtk_window_resize(self.window,1100,740),
+                                _ => {}
+                            }
+                            if qa.stage == 24 {
+                                qa.results.push(json!({"singlePaneSteps":12,"singlePaneNavigation":qa.errors.is_empty(),
+                                    "whatsappDraftPreserved":qa.errors.is_empty(),"normalZoomThroughout":qa.errors.is_empty(),
+                                    "spaReplacementRecovered":qa.errors.is_empty(),"resizePreservedLoadedViews":qa.errors.is_empty(),
+                                    "resizeExtraDocumentLoads":self.slots.iter().enumerate().map(|(index,slot)|slot.loads.saturating_sub(qa.loads[index])).sum::<u64>()}));
+                                qa.stage = 9;
+                            } else {
+                                qa.stage += 1;
                             }
                         }
-                    }
-                    if index + 1 < sizes.len() {
-                        let next = sizes[index + 1];
-                        gtk_window_resize(self.window, next.0, next.1);
-                        qa.stage += 1;
                     } else {
-                        qa.results.push(json!({"responsiveLayouts":4,"resizePreservedLoadedViews":qa.errors.is_empty(),"resizeExtraDocumentLoads":self.slots.iter().enumerate().map(|(index,slot)|slot.loads.saturating_sub(qa.loads[index])).sum::<u64>(),
-                            "whatsappFitSizes":4,"whatsappNoClipping":qa.errors.is_empty(),"whatsappDraftPreserved":self.slots[0].fixture_draft.as_deref()==Some("retained draft"),"whatsappRestoredZoom":zoom,"otherServicesUnchanged":self.slots[1..].iter().all(|slot|(webkit_web_view_get_zoom_level(slot.view)-1.0).abs()<=0.001)}));
-                        qa.stage = 9;
+                        self.qa_page(&mut qa);
                     }
                 }
             }
@@ -1441,6 +1402,8 @@ struct Qa {
     pending_switch: Option<(usize, Instant)>,
     switch_ms: Vec<f64>,
     retention_started: Option<Instant>,
+    page_pending: bool,
+    page_state: Option<Value>,
 }
 impl Qa {
     fn new(report: std::path::PathBuf, snapshot: Option<std::path::PathBuf>) -> Self {
@@ -1460,6 +1423,8 @@ impl Qa {
             pending_switch: None,
             switch_ms: Vec::with_capacity(60),
             retention_started: None,
+            page_pending: false,
+            page_state: None,
         }
     }
 }
@@ -1539,30 +1504,26 @@ unsafe extern "C" fn destroyed_window(_: Ptr, _: Ptr) {
 unsafe extern "C" fn view_changed(view: Ptr, _: Ptr, data: Ptr) {
     enqueue(Action::Changed(data as usize, view));
 }
-unsafe extern "C" fn view_allocated(view: Ptr, _: *const Rectangle, data: Ptr) {
-    if data as usize == 0 {
-        enqueue(Action::Fit(0, view));
+unsafe extern "C" fn evaluated(source: Ptr, result: Ptr, _: Ptr) {
+    let mut error = null_mut();
+    let value = webkit_web_view_evaluate_javascript_finish(source, result, &mut error);
+    if !value.is_null() {
+        g_object_unref(value);
+    }
+    if !error.is_null() {
+        g_error_free(error);
     }
 }
 
-unsafe extern "C" fn viewport_measured(source: Ptr, result: Ptr, data: Ptr) {
-    let probe = *Box::from_raw(data.cast::<Probe>());
+unsafe extern "C" fn page_measured(source: Ptr, result: Ptr, data: Ptr) {
+    let probe = *Box::from_raw(data.cast::<PageProbe>());
     let mut error = null_mut();
     let value = webkit_web_view_evaluate_javascript_finish(source, result, &mut error);
-    let mut geometry = None;
-    let mut fixture_draft = None;
+    let mut state = None;
     if !value.is_null() {
         let serialized = jsc_value_to_string(value);
         if !serialized.is_null() {
-            if let Ok(parsed) = serde_json::from_str::<Value>(&text(serialized)) {
-                if probe.fixture {
-                    fixture_draft = parsed
-                        .get("fixtureDraft")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned);
-                }
-                geometry = serde_json::from_value(parsed).ok();
-            }
+            state = serde_json::from_str(&text(serialized)).ok();
             g_free(serialized.cast());
         }
         g_object_unref(value);
@@ -1570,17 +1531,13 @@ unsafe extern "C" fn viewport_measured(source: Ptr, result: Ptr, data: Ptr) {
     if !error.is_null() {
         g_error_free(error);
     }
-    enqueue(Action::Measured(ProbeReply {
-        probe,
-        geometry,
-        fixture_draft,
-    }));
+    enqueue(Action::QaPage(PageReply { probe, state }));
 }
 unsafe extern "C" fn load_changed(view: Ptr, event: c_int, data: Ptr) {
     if event == WEBKIT_LOAD_STARTED {
         enqueue(Action::LoadStarted(data as usize, view));
     } else if event == WEBKIT_LOAD_FINISHED && data as usize == 0 {
-        enqueue(Action::Fit(0, view));
+        enqueue(Action::Adapt(0, view));
     }
 }
 unsafe extern "C" fn view_closed(view: Ptr, data: Ptr) {
@@ -1628,18 +1585,18 @@ unsafe extern "C" fn service_menu(widget: Ptr, event: Ptr, data: Ptr) -> Bool {
     connect(keep, c!("toggled"), keep_toggled as *const (), index);
     gtk_menu_shell_append(menu, keep);
     if index == 0 {
-        let fit = gtk_check_menu_item_new_with_label(c!("Fit width"));
+        let fit = gtk_check_menu_item_new_with_label(c!("Single pane"));
         let enabled = BRIDGE
             .with(|bridge| {
                 bridge
                     .app
                     .try_borrow()
                     .ok()
-                    .and_then(|app| app.as_ref().map(|app| app.config.fit_whatsapp))
+                    .and_then(|app| app.as_ref().map(|app| app.config.compact_whatsapp))
             })
             .unwrap_or(true);
         gtk_check_menu_item_set_active(fit, enabled as Bool);
-        connect(fit, c!("toggled"), fit_toggled as *const (), 0);
+        connect(fit, c!("toggled"), compact_toggled as *const (), 0);
         gtk_menu_shell_append(menu, fit);
     }
     let sleep = gtk_menu_item_new_with_label(c!("Sleep"));
@@ -1657,8 +1614,8 @@ unsafe extern "C" fn keep_toggled(widget: Ptr, data: Ptr) {
         gtk_check_menu_item_get_active(widget) != FALSE,
     ));
 }
-unsafe extern "C" fn fit_toggled(widget: Ptr, _: Ptr) {
-    enqueue(Action::FitEnabled(
+unsafe extern "C" fn compact_toggled(widget: Ptr, _: Ptr) {
+    enqueue(Action::Compact(
         gtk_check_menu_item_get_active(widget) != FALSE,
     ));
 }

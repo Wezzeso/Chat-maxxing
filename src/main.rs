@@ -3,7 +3,6 @@ mod ffi;
 mod layout;
 mod model;
 mod storage;
-mod viewport;
 
 use std::path::PathBuf;
 

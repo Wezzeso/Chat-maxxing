@@ -330,13 +330,11 @@ def run_self_test(binary, output):
     for expected in ["retainedAfter35Seconds", "longIdleViewDestroyed", "latestSelectionWins"]:
         if facts.get(expected) is not True:
             raise RuntimeError("Native switching fixture did not confirm " + expected)
-    if facts.get("responsiveLayouts") != 4 or facts.get("resizePreservedLoadedViews") is not True or facts.get("resizeExtraDocumentLoads") != 0:
-        raise RuntimeError("Native resizing fixture recreated or reloaded a view")
-    for expected in ["whatsappNoClipping", "whatsappDraftPreserved", "otherServicesUnchanged"]:
+    for expected in ["singlePaneNavigation", "whatsappDraftPreserved", "normalZoomThroughout", "spaReplacementRecovered", "resizePreservedLoadedViews"]:
         if facts.get(expected) is not True:
-            raise RuntimeError("WhatsApp document fixture did not confirm " + expected)
-    if facts.get("whatsappFitSizes") != 4 or facts.get("whatsappRestoredZoom") != 1.0:
-        raise RuntimeError("WhatsApp document fixture did not restore normal page size")
+            raise RuntimeError("WhatsApp single-pane fixture did not confirm " + expected)
+    if facts.get("singlePaneSteps") != 12 or facts.get("resizeExtraDocumentLoads") != 0:
+        raise RuntimeError("WhatsApp single-pane fixture reloaded or skipped navigation")
     if facts.get("warmSwitches") != 40 or facts.get("warmExtraDocumentLoads") != 0:
         raise RuntimeError("Native switching fixture reloaded warm pages")
     if report.get("ok") is False or report.get("passed") is False or report.get("failures") or report.get("errors"):

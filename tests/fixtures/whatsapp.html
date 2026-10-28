@@ -1,0 +1,36 @@
+<!doctype html>
+<meta name="color-scheme" content="dark">
+<title>Fixture 0</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111b21;color:#e9edef;font:18px sans-serif}
+#app{width:100vw;height:100vh;overflow:hidden}
+.desktop{display:flex;min-width:748px;width:100%;height:100%}
+#side{box-sizing:border-box;flex:0 0 300px;min-width:300px;background:#202c33;height:100%;display:flex;flex-direction:column}
+header{box-sizing:border-box;height:64px;flex:0 0 64px;display:flex;align-items:center;padding:0 16px;background:#202c33}
+#pane-side{overflow:auto;flex:1}#relay-chat-row{width:100%;box-sizing:border-box;padding:24px 16px;border:0;background:transparent;color:inherit;text-align:left;font:inherit}
+.chat-shell,.placeholder{flex:1;min-width:0;height:100%}
+#main{display:flex;flex-direction:column;width:100%;min-width:0;height:100%;background:#111b21}
+.messages{flex:1;padding:20px;overflow:auto;min-height:0}
+footer{box-sizing:border-box;padding:12px;display:flex;gap:8px}input{flex:1;min-width:0;padding:12px;border:0;border-radius:8px;background:#2a3942;color:inherit;font:18px sans-serif}
+.send{border:0;border-radius:8px;background:#00a884;color:#fff;padding:12px;font:18px sans-serif}
+</style>
+<div id="app"><div class="desktop"><div id="side"><header>Chats</header><div id="pane-side"><div role="row" tabindex="0" id="relay-chat-row">Local chat <button id="relay-row-menu" aria-label="Chat menu">⋮</button></div></div></div><section class="placeholder"></section></div></div>
+<button hidden id="relay-fixture-replace">Replace chat</button>
+<script>
+let identity=0;
+function mount(replace=false){
+ let main=document.getElementById('main');
+ if(main&&!replace)return;
+ const old=main?.closest('.chat-shell');
+ const draft=main?.querySelector('input')?.value||'';
+ const wrapper=document.createElement('section');wrapper.className='chat-shell';
+ wrapper.innerHTML='<div id="main"><header><span>Local chat</span></header><div class="messages">Local conversation fixture</div><footer><input id="relay-fixture-draft" aria-label="Message"><button class="send">Send</button></footer></div>';
+ wrapper.querySelector('#main').dataset.fixtureIdentity=String(++identity);
+ wrapper.querySelector('input').value=draft;
+ if(old)old.replaceWith(wrapper);else document.querySelector('.placeholder').replaceWith(wrapper);
+}
+document.getElementById('relay-row-menu').addEventListener('click',event=>event.stopPropagation());
+document.getElementById('relay-chat-row').addEventListener('click',()=>queueMicrotask(()=>mount()));
+document.getElementById('relay-fixture-replace').addEventListener('click',()=>mount(true));
+localStorage.setItem('relay-test','persisted');
+</script>

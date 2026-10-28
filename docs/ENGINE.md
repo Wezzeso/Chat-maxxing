@@ -13,19 +13,27 @@ coalesced, and layout changes run only when the mode changes. The same widgets
 and WebViews are kept without another navigation. Provider websites control
 their own page layouts.
 
-WhatsApp has a separate fit-to-width policy, enabled by default. In narrow
-windows, measured page geometry sets WebKit's whole-page zoom so the desktop
-layout fits; wide windows restore 100%. This scales the desktop page rather
-than creating a mobile chat interface. The native **Fit width** item in the
-WhatsApp logo menu disables or enables the policy. Other services retain their
-normal zoom. The app does not reload pages, change user agents, or inject
-provider styles to make them fit.
+WhatsApp uses a single-pane layout at viewport widths of 748 CSS pixels or
+less. The chat list or the selected chat occupies the available width, with
+WebKit zoom fixed at 100% and normal text sizing. Clicking a chat row reveals
+the existing chat pane; an app-provided back arrow returns to the existing
+list. The document and composer remain mounted to preserve their state and
+drafts. Wide windows restore both panes. The native **Single pane** item in the
+WhatsApp logo menu controls this behavior and is enabled by default. Its
+`compact_whatsapp` setting replaces the earlier `fit_whatsapp` preference,
+which is ignored.
 
-Geometry is read only for an opened, loaded WhatsApp view when it is selected
-or resized. Each selection, resize, or document load allows at most three probes, with no
-polling or page observers. Probes read layout dimensions without inspecting
-messages. View and draft preservation have been checked with a local fixture;
-authenticated WhatsApp behavior remains unverified.
+The adapter runs only on the WhatsApp origin in an isolated JavaScript world.
+A no-op registered user script keeps that world alive between evaluations;
+related sign-in popups receive only the no-op, not the pane adapter.
+CSS uses app-owned attributes. A structural `MutationObserver` coalesces work
+through `requestAnimationFrame` only while the narrow WhatsApp view is visible;
+it pauses when the service is hidden, the window is wide, or the option is
+disabled. There is no polling, additional WebView, daemon, or app IPC service.
+The adapter relies on undocumented provider DOM hooks (`#side`, `#pane-side`,
+`#main`, and the chat header). Unknown layouts keep the regular provider page;
+future WhatsApp changes may require adapter updates. Signed-in WhatsApp
+behavior remains unverified.
 
 At startup no WebView or web-renderer process is created. A shared persistent
 website-data manager and WebKit context are created when the first service is
@@ -66,6 +74,7 @@ bundled.
 
 ## Primary references
 
+- [Isolated user scripts](https://webkitgtk.org/reference/webkit2gtk/stable/ctor.UserScript.new_for_world.html)
 - [WebKitGTK WebView](https://webkitgtk.org/reference/webkit2gtk/stable/class.WebView.html)
 - [Website data manager](https://webkitgtk.org/reference/webkit2gtk/stable/class.WebsiteDataManager.html)
 - [Persistent cookies](https://webkitgtk.org/reference/webkit2gtk/stable/method.CookieManager.set_persistent_storage.html)
