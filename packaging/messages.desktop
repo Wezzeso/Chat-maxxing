@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Messages
+Comment=Native messaging workspace
+Exec=relay-native
+Terminal=false
+Categories=Network;InstantMessaging;
+StartupWMClass=RelayNative
+StartupNotify=true

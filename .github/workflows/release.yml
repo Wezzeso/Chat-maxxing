@@ -1,0 +1,33 @@
+name: Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.toml
+      - .github/workflows/release.yml
+      - packaging/publish-release.sh
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install native runtime
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-3-0t64 libwebkit2gtk-4.1-0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Build and publish versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=/build/workspace --remap-path-prefix=/home/runner=/build/runner
+        run: bash packaging/publish-release.sh
