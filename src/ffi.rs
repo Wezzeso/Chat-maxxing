@@ -389,6 +389,9 @@ extern "C" {
     pub fn webkit_web_view_get_display_capture_state(view: Ptr) -> c_int;
     pub fn webkit_web_view_set_background_color(view: Ptr, rgba: *const Rgba);
     pub fn webkit_web_view_get_settings(view: Ptr) -> Ptr;
+    pub fn webkit_web_view_get_zoom_level(view: Ptr) -> c_double;
+    pub fn webkit_web_view_set_zoom_level(view: Ptr, zoom_level: c_double);
+    pub fn webkit_settings_set_zoom_text_only(settings: Ptr, enabled: Bool);
     pub fn webkit_web_view_set_settings(view: Ptr, settings: Ptr);
     pub fn webkit_web_view_try_close(view: Ptr);
     pub fn webkit_web_view_reload(view: Ptr);

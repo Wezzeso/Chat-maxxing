@@ -10,8 +10,22 @@ or shorter windows use a 48 px bottom bar with 36 px buttons; all seven controls
 fit down to the 320 × 240 minimum. Initial windows and sign-in popups fit the
 monitor workarea. GTK handles display scaling. Resize notifications are
 coalesced, and layout changes run only when the mode changes. The same widgets
-and WebViews are kept; no navigation, zoom, or user-agent change is involved.
-Provider websites control their own page layouts.
+and WebViews are kept without another navigation. Provider websites control
+their own page layouts.
+
+WhatsApp has a separate fit-to-width policy, enabled by default. In narrow
+windows, measured page geometry sets WebKit's whole-page zoom so the desktop
+layout fits; wide windows restore 100%. This scales the desktop page rather
+than creating a mobile chat interface. The native **Fit width** item in the
+WhatsApp logo menu disables or enables the policy. Other services retain their
+normal zoom. The app does not reload pages, change user agents, or inject
+provider styles to make them fit.
+
+Geometry is read only for an opened, loaded WhatsApp view when it is selected
+or resized. Each selection, resize, or document load allows at most three probes, with no
+polling or page observers. Probes read layout dimensions without inspecting
+messages. View and draft preservation have been checked with a local fixture;
+authenticated WhatsApp behavior remains unverified.
 
 At startup no WebView or web-renderer process is created. A shared persistent
 website-data manager and WebKit context are created when the first service is

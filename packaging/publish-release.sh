@@ -52,8 +52,10 @@ Native Linux preview built from commit $GITHUB_SHA.
 
 - Rust application with native GTK controls and embedded WebKitGTK.
 - Minimal dark logo sidebar; service pages load on demand.
-- Fix repeated page reloads: loaded views stay ready for ten minutes after switching away.
-- Faster sidebar dispatch, moderate resource caching, and no redundant same-app work.
+- Loaded views stay ready for ten minutes after switching away.
+- Sidebar becomes a compact bottom bar in narrow or short windows.
+- WhatsApp desktop content scales to fit narrow windows and returns to normal size when widened.
+- Right-click the WhatsApp logo to toggle Fit width.
 - Closing the window exits the app and its engine workers.
 
 Downloads: Debian/Ubuntu installer, portable Linux x86-64 archive, and SHA256 checksums.

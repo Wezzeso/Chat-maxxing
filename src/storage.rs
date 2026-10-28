@@ -18,10 +18,20 @@ extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Config {
     pub keep_awake: [bool; 5],
+    pub fit_whatsapp: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            keep_awake: [false; 5],
+            fit_whatsapp: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -286,6 +296,7 @@ mod tests {
         assert_eq!(storage.load_config().unwrap(), Config::default());
         let config = Config {
             keep_awake: [true, false, false, true, false],
+            ..Config::default()
         };
         storage.save_config(&config).unwrap();
         assert_eq!(storage.load_config().unwrap(), config);
@@ -303,6 +314,25 @@ mod tests {
             .file_name()
             .to_string_lossy()
             .ends_with(".tmp")));
+    }
+
+    #[test]
+    fn legacy_config_enables_whatsapp_fit_and_opt_out_round_trips() {
+        let temp = TestDirectory::new();
+        let storage = Storage::prepare(Some(&temp.0.join("app"))).unwrap();
+        fs::write(
+            storage.data_dir.join("config.json"),
+            br#"{"keep_awake":[true,false,true,false,false]}"#,
+        )
+        .unwrap();
+        let mut config = storage.load_config().unwrap();
+        assert_eq!(config.keep_awake, [true, false, true, false, false]);
+        assert!(config.fit_whatsapp);
+
+        config.fit_whatsapp = false;
+        storage.save_config(&config).unwrap();
+        assert_eq!(storage.load_config().unwrap(), config);
+        assert!(!storage.load_config().unwrap().fit_whatsapp);
     }
 
     #[test]

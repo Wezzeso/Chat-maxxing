@@ -17,7 +17,7 @@ WhatsApp · Telegram · Instagram · LinkedIn · Gmail
 
 ## Run
 
-[Download v0.3.2](https://github.com/Wezzeso/Chat-maxxing/releases/tag/v0.3.2)
+[Download v0.3.3](https://github.com/Wezzeso/Chat-maxxing/releases/tag/v0.3.3)
 for the Debian/Ubuntu installer or portable Linux package.
 
 The prebuilt app targets Linux x86-64. Requires GTK 3.24+, WebKitGTK 4.1
@@ -33,12 +33,14 @@ From the portable package:
 Or install the Debian/Ubuntu package:
 
 ```sh
-sudo apt install ./relay-native_0.3.2_amd64.deb
+sudo apt install ./relay-native_0.3.3_amd64.deb
 relay-native
 ```
 
 Click a service to open its web app. Right-click its logo for **Keep awake** or
 **Sleep**. Sleeping pauses live updates; the moon sleeps eligible pages.
+WhatsApp scales its desktop page to fit narrow windows by default. Toggle
+**Fit width** in its logo menu.
 
 ## Build
 
@@ -59,8 +61,7 @@ cargo test --locked
 ```
 
 For the native GUI check, see [verification](docs/VERIFICATION.md).
-Observed empty startup: **44 MB PSS** before opening services.
-Loaded pages and engine workers add memory.
+Startup creates no web-renderer process. Loaded pages and engine workers add memory.
 
 ## Compatibility
 
