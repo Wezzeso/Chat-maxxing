@@ -53,10 +53,10 @@ Native Linux preview built from commit $GITHUB_SHA.
 - Rust application with native GTK controls and embedded WebKitGTK.
 - Minimal dark logo sidebar; service pages load on demand.
 - Loaded views stay ready for ten minutes after switching away.
-- Sidebar becomes a compact bottom bar in narrow or short windows.
-- WhatsApp shows one full-width pane at a time in narrow windows, at 100% zoom.
-- Open a chat and use the back arrow to return to the list; wide windows restore both panes.
-- Right-click the WhatsApp logo to toggle Single pane, enabled by default.
+- Small windows use a 56 px bottom bar with five equally spaced service icons and 44 px hit areas.
+- WhatsApp's mobile layout keeps normal-size text, compact headers, independent scrolling, and the composer at the bottom.
+- Back or Escape returns to chats; a menu button opens the retained navigation controls. Wide windows restore the provider layout.
+- Right-click the WhatsApp logo to toggle Mobile layout, enabled by default.
 - Closing the window exits the app and its engine workers.
 
 Downloads: Debian/Ubuntu installer, portable Linux x86-64 archive, and SHA256 checksums.

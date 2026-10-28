@@ -35,7 +35,7 @@ button.service, button.control { background: transparent; background-image: none
  border: 0; border-radius: 6px; box-shadow: none; padding: 0; min-width: 44px; min-height: 44px; }
 button.service:hover, button.control:hover { background: #23262b; }
  #rail.compact button.service, #rail.compact button.control {
- min-width: 36px; min-height: 36px; border-radius: 5px; }
+ min-width: 44px; min-height: 44px; border-radius: 8px; }
 button.service.selected { background: #292d33; }
 button.service.kept { box-shadow: inset 0 -2px #bda669; }
 button.control { color: #818894; }
@@ -256,6 +256,7 @@ struct App {
     window: Ptr,
     row: Ptr,
     controls: [Ptr; 2],
+    spacer: Ptr,
     layout: Mode,
     rail: Ptr,
     stack: Ptr,
@@ -408,6 +409,7 @@ impl App {
             window,
             row,
             controls,
+            spacer,
             layout: Mode::Sidebar,
             rail,
             stack,
@@ -463,15 +465,23 @@ impl App {
                 GTK_ORIENTATION_VERTICAL
             },
         );
-        gtk_box_set_spacing(self.rail, if compact { 2 } else { 6 });
+        gtk_box_set_spacing(self.rail, if compact { 0 } else { 6 });
         gtk_widget_set_size_request(
             self.rail,
             if compact { -1 } else { 56 },
-            if compact { 48 } else { -1 },
+            if compact { layout::BOTTOM_HEIGHT } else { -1 },
         );
-        for button in self.buttons.iter().chain(self.controls.iter()) {
-            let size = if compact { 36 } else { 44 };
-            gtk_widget_set_size_request(*button, size, size);
+        for button in &self.buttons {
+            gtk_widget_set_size_request(*button, 44, 44);
+            gtk_box_set_child_packing(self.rail, *button, compact as Bool, TRUE, 0, 0);
+        }
+        for widget in self.controls.iter().chain(std::iter::once(&self.spacer)) {
+            gtk_widget_set_no_show_all(*widget, compact as Bool);
+            if compact {
+                gtk_widget_hide(*widget);
+            } else {
+                gtk_widget_show(*widget);
+            }
         }
         gtk_box_reorder_child(self.row, self.rail, if compact { -1 } else { 0 });
     }
@@ -679,12 +689,18 @@ impl App {
                 if (!node) return {visible:false,width:0,x:0};
                 const rect = node.getBoundingClientRect();
                 const visible = rect.width > 0 && rect.height > 0 && getComputedStyle(node).visibility !== 'hidden';
-                return {visible,width:rect.width,x:rect.x};
+                return {visible,width:rect.width,height:rect.height,x:rect.x,y:rect.y,right:rect.right,bottom:rect.bottom,scroll:node.scrollTop};
             };
             const input = document.getElementById('relay-fixture-draft');
             return JSON.stringify({viewport:innerWidth,rootWidth:document.documentElement.scrollWidth,
                 list:box('side'),chat:box('main'),back:box('relay-wa-back'),
                 backCount:document.querySelectorAll('#relay-wa-back').length,
+                header:box('relay-chat-header'),composer:box('relay-composer'),messages:box('relay-message-scroll'),
+                listScroll:document.getElementById('pane-side').scrollTop,
+                focused:document.activeElement?.id,
+                controls:[...document.querySelectorAll('#relay-chat-header button,#relay-composer button')].map(node=>{
+                    const rect=node.getBoundingClientRect();return {x:rect.x,y:rect.y,width:rect.width,height:rect.height,right:rect.right,bottom:rect.bottom};}),
+                navigation:box('relay-desktop-rail'),navigationButton:box('relay-wa-navigation'),scrim:box('relay-wa-nav-scrim'),
                 font:input?parseFloat(getComputedStyle(input).fontSize):null,
                 draft:input?.value,identity:document.getElementById('main')?.dataset.fixtureIdentity,
                 adapter:globalThis.relayWhatsApp?.status()});
@@ -1096,16 +1112,17 @@ impl App {
                     }
                 }
             }
-            13..=24 => {
+            13..=31 => {
                 let (width, height) = match qa.stage {
                     17 | 18 => (320, 640),
                     19 => (1100, 320),
                     20 | 24 => (1100, 740),
+                    29..=31 => (320, 360),
                     _ => (420, 640),
                 };
                 let view = self.slots[0].view;
                 let expected = if Mode::for_size(width, height) == Mode::BottomBar {
-                    (width, height - 48)
+                    (width, height - layout::BOTTOM_HEIGHT)
                 } else {
                     (width - 56, height)
                 };
@@ -1122,8 +1139,9 @@ impl App {
                             self.qa_page(&mut qa);
                         } else {
                             self.check_warm_views(&mut qa);
-                            let chat = matches!(qa.stage, 14 | 16 | 17 | 18 | 21 | 23);
-                            let list = matches!(qa.stage, 13 | 15);
+                            let chat =
+                                matches!(qa.stage, 14 | 16 | 17 | 18 | 21 | 23 | 28 | 29 | 31);
+                            let list = matches!(qa.stage, 13 | 15 | 25 | 26 | 27 | 30);
                             let enabled = qa.stage != 22;
                             let visible =
                                 |pane: &str| state[pane]["visible"].as_bool().unwrap_or(false);
@@ -1187,6 +1205,86 @@ impl App {
                                         .into(),
                                 );
                             }
+                            if chat {
+                                let inside = |value: &Value| {
+                                    value["x"].as_f64().unwrap_or(-1.0) >= -1.0
+                                        && value["right"].as_f64().unwrap_or(f64::MAX)
+                                            <= expected.0 as f64 + 1.0
+                                        && value["y"].as_f64().unwrap_or(-1.0) >= -1.0
+                                        && value["bottom"].as_f64().unwrap_or(f64::MAX)
+                                            <= expected.1 as f64 + 1.0
+                                };
+                                if !inside(&state["header"])
+                                    || !inside(&state["composer"])
+                                    || (state["header"]["height"].as_f64().unwrap_or_default()
+                                        - 56.0)
+                                        .abs()
+                                        > 1.0
+                                    || (state["composer"]["bottom"].as_f64().unwrap_or_default()
+                                        - expected.1 as f64)
+                                        .abs()
+                                        > 1.0
+                                {
+                                    qa.errors.push(format!(
+                                        "Mobile header/composer is clipped at step {}: {state}",
+                                        qa.stage
+                                    ));
+                                }
+                                if state["controls"].as_array().is_none_or(|controls| {
+                                    controls.iter().any(|item| {
+                                        !inside(item)
+                                            || item["width"].as_f64().unwrap_or_default() < 44.0
+                                            || item["height"].as_f64().unwrap_or_default() < 44.0
+                                    })
+                                }) {
+                                    qa.errors.push(format!(
+                                        "Mobile tap targets are clipped or too small at step {}",
+                                        qa.stage
+                                    ));
+                                }
+                                if state["messages"]["height"].as_f64().unwrap_or_default() < 40.0 {
+                                    qa.errors.push("Mobile message scroller collapsed".into());
+                                }
+                            }
+                            if matches!(qa.stage, 15 | 30)
+                                && state["focused"].as_str() != Some("relay-chat-row")
+                            {
+                                qa.errors
+                                    .push("Back did not restore focus to the selected row".into());
+                            }
+                            if qa.stage == 15
+                                && (state["listScroll"].as_f64().unwrap_or_default() - 30.0).abs()
+                                    > 1.0
+                            {
+                                qa.errors.push("Back lost the list scroll position".into());
+                            }
+                            if qa.stage == 16
+                                && (state["messages"]["scroll"].as_f64().unwrap_or_default()
+                                    - 160.0)
+                                    .abs()
+                                    > 1.0
+                            {
+                                qa.errors
+                                    .push("Reopening lost the conversation scroll position".into());
+                            }
+                            if enabled && width < 748 && visible("navigation") != (qa.stage == 26) {
+                                qa.errors.push(format!(
+                                    "Desktop navigation leaked into the mobile view at step {}",
+                                    qa.stage
+                                ));
+                            }
+                            if qa.stage == 26
+                                && (!visible("scrim")
+                                    || state["navigation"]["width"].as_f64() != Some(72.0))
+                            {
+                                qa.errors
+                                    .push("WhatsApp navigation drawer did not open".into());
+                            }
+                            if qa.stage == 31 && state["focused"].as_str() != Some("relay-wa-back")
+                            {
+                                qa.errors
+                                    .push("Keyboard selection did not focus Back".into());
+                            }
                             if self.slots.iter().any(|slot| {
                                 (webkit_web_view_get_zoom_level(slot.view) - 1.0).abs() > 0.001
                             }) {
@@ -1207,8 +1305,9 @@ impl App {
                                 }
                             }
                             match qa.stage {
-                                13 | 15 => self.evaluate(view,"document.getElementById('relay-chat-row').click(); null;",Some(evaluated),null_mut()),
-                                14 => self.evaluate(view,"document.getElementById('relay-fixture-draft').value='retained draft'; document.getElementById('relay-wa-back')?.click(); document.getElementById('relay-row-menu').click(); null;",Some(evaluated),null_mut()),
+                                13 => self.evaluate(view,"document.getElementById('pane-side').scrollTop=30; document.getElementById('relay-chat-row').click(); null;",Some(evaluated),null_mut()),
+                                15 | 27 => self.evaluate(view,"document.getElementById('relay-chat-row').click(); null;",Some(evaluated),null_mut()),
+                                14 => self.evaluate(view,"document.getElementById('relay-fixture-draft').value='retained draft'; document.getElementById('relay-message-scroll').scrollTop=160; document.getElementById('relay-wa-back')?.click(); document.getElementById('relay-row-menu').click(); null;",Some(evaluated),null_mut()),
                                 16 => gtk_window_resize(self.window,320,640),
                                 17 => self.evaluate(view,"document.getElementById('relay-fixture-replace').click(); null;",Some(evaluated),null_mut()),
                                 18 => gtk_window_resize(self.window,1100,320),
@@ -1217,12 +1316,18 @@ impl App {
                                 21 => enqueue(Action::Compact(false)),
                                 22 => enqueue(Action::Compact(true)),
                                 23 => gtk_window_resize(self.window,1100,740),
+                                24 => { self.evaluate(view,"globalThis.relayWhatsApp.showList(); null;",Some(evaluated),null_mut()); gtk_window_resize(self.window,420,640); }
+                                25 => self.evaluate(view,"document.getElementById('relay-wa-navigation').click(); null;",Some(evaluated),null_mut()),
+                                26 => self.evaluate(view,"document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); null;",Some(evaluated),null_mut()),
+                                28 => gtk_window_resize(self.window,320,360),
+                                29 => self.evaluate(view,"document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); null;",Some(evaluated),null_mut()),
+                                30 => self.evaluate(view,"const row=document.getElementById('relay-chat-row'); row.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); row.click(); null;",Some(evaluated),null_mut()),
                                 _ => {}
                             }
-                            if qa.stage == 24 {
-                                qa.results.push(json!({"singlePaneSteps":12,"singlePaneNavigation":qa.errors.is_empty(),
+                            if qa.stage == 31 {
+                                qa.results.push(json!({"singlePaneSteps":19,"singlePaneNavigation":qa.errors.is_empty(),
                                     "whatsappDraftPreserved":qa.errors.is_empty(),"normalZoomThroughout":qa.errors.is_empty(),
-                                    "spaReplacementRecovered":qa.errors.is_empty(),"resizePreservedLoadedViews":qa.errors.is_empty(),
+                                    "spaReplacementRecovered":qa.errors.is_empty(),"mobileControlsFit":qa.errors.is_empty(),"focusAndScrollRetained":qa.errors.is_empty(),"navigationDrawerWorks":qa.errors.is_empty(),"resizePreservedLoadedViews":qa.errors.is_empty(),
                                     "resizeExtraDocumentLoads":self.slots.iter().enumerate().map(|(index,slot)|slot.loads.saturating_sub(qa.loads[index])).sum::<u64>()}));
                                 qa.stage = 9;
                             } else {
@@ -1585,7 +1690,7 @@ unsafe extern "C" fn service_menu(widget: Ptr, event: Ptr, data: Ptr) -> Bool {
     connect(keep, c!("toggled"), keep_toggled as *const (), index);
     gtk_menu_shell_append(menu, keep);
     if index == 0 {
-        let fit = gtk_check_menu_item_new_with_label(c!("Single pane"));
+        let fit = gtk_check_menu_item_new_with_label(c!("Mobile layout"));
         let enabled = BRIDGE
             .with(|bridge| {
                 bridge

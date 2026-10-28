@@ -17,7 +17,7 @@ WhatsApp · Telegram · Instagram · LinkedIn · Gmail
 
 ## Run
 
-[Download v0.3.4](https://github.com/Wezzeso/Chat-maxxing/releases/tag/v0.3.4)
+[Download v0.3.5](https://github.com/Wezzeso/Chat-maxxing/releases/tag/v0.3.5)
 for the Debian/Ubuntu installer or portable Linux package.
 
 The prebuilt app targets Linux x86-64. Requires GTK 3.24+, WebKitGTK 4.1
@@ -33,14 +33,15 @@ From the portable package:
 Or install the Debian/Ubuntu package:
 
 ```sh
-sudo apt install ./relay-native_0.3.4_amd64.deb
+sudo apt install ./relay-native_0.3.5_amd64.deb
 relay-native
 ```
 
 Click a service to open its web app. Right-click its logo for **Keep awake** or
-**Sleep**. Sleeping pauses live updates; the moon sleeps eligible pages.
-WhatsApp shows one pane at a time in narrow windows, with normal-size text.
-Use the back arrow to return to chats, or toggle **Single pane** in its logo menu.
+**Sleep**. Sleeping pauses live updates. Small windows show five service icons;
+close the window to quit.
+WhatsApp uses a mobile layout in narrow windows, with normal-size text and a
+back arrow to return to chats. Toggle **Mobile layout** in its logo menu.
 
 ## Build
 

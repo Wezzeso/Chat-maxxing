@@ -2,32 +2,97 @@
 <meta name="color-scheme" content="dark">
 <title>Fixture 0</title>
 <style>
+*{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111b21;color:#e9edef;font:18px sans-serif}
+button,input{font:inherit;color:inherit}button{cursor:pointer}
 #app{width:100vw;height:100vh;overflow:hidden}
-.desktop{display:flex;min-width:748px;width:100%;height:100%}
-#side{box-sizing:border-box;flex:0 0 300px;min-width:300px;background:#202c33;height:100%;display:flex;flex-direction:column}
-header{box-sizing:border-box;height:64px;flex:0 0 64px;display:flex;align-items:center;padding:0 16px;background:#202c33}
-#pane-side{overflow:auto;flex:1}#relay-chat-row{width:100%;box-sizing:border-box;padding:24px 16px;border:0;background:transparent;color:inherit;text-align:left;font:inherit}
-.chat-shell,.placeholder{flex:1;min-width:0;height:100%}
-#main{display:flex;flex-direction:column;width:100%;min-width:0;height:100%;background:#111b21}
-.messages{flex:1;padding:20px;overflow:auto;min-height:0}
-footer{box-sizing:border-box;padding:12px;display:flex;gap:8px}input{flex:1;min-width:0;padding:12px;border:0;border-radius:8px;background:#2a3942;color:inherit;font:18px sans-serif}
-.send{border:0;border-radius:8px;background:#00a884;color:#fff;padding:12px;font:18px sans-serif}
+.desktop{display:flex;min-width:748px;width:100%;height:100%;overflow:hidden}
+#relay-desktop-rail{flex:0 0 52px;width:52px;display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 0;background:#172229;border-right:1px solid #34444d}
+.rail-button{width:36px;height:36px;border:0;border-radius:50%;background:#2a3942;font-size:22px}
+.rail-end{margin-top:auto}
+.workspace{display:flex;flex:1;min-width:696px;height:100%;overflow:hidden}
+.list-shell{flex:0 0 300px;min-width:300px;height:100%;overflow:hidden}
+#side{width:100%;min-width:300px;height:100%;display:flex;flex-direction:column;background:#111b21;border-right:1px solid #34444d}
+header{height:64px;flex:0 0 64px;display:flex;align-items:center;gap:10px;padding:0 16px;background:#202c33}
+#relay-side-header{justify-content:space-between;font-weight:600}
+.header-actions{display:flex;flex:0 0 auto;gap:4px}
+.icon-button{display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;border:0;border-radius:50%;background:transparent;font-size:23px}
+.search-wrap{padding:10px 12px;flex:0 0 56px}
+.search-wrap input{display:block;width:100%;min-width:0;padding:9px 12px;border:0;border-radius:8px;background:#202c33;font-size:15px}
+.filters{display:flex;gap:8px;flex:0 0 42px;padding:0 12px 8px;overflow:hidden}
+.filter{border:0;border-radius:18px;padding:6px 12px;background:#202c33;font-size:14px;white-space:nowrap}
+.filter[aria-pressed="true"]{background:#0a332c;color:#8be3c5}
+#pane-side{flex:1;min-height:0;overflow:auto}
+.chat-row{display:flex;align-items:center;width:100%;min-height:82px;padding:12px;gap:12px;border-bottom:1px solid #202c33;color:inherit;text-align:left;cursor:pointer}
+.avatar{display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:50%;background:#364b56;color:#c8d8df;font-size:17px}
+.row-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.row-title,.row-preview{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-title{font-size:16px}.row-preview{font-size:14px;color:#a2b0b8}
+#relay-row-menu{flex:0 0 32px;width:32px;height:36px;border:0;background:transparent;font-size:24px}
+.chat-shell,.placeholder{flex:1;min-width:0;height:100%;overflow:hidden}
+.placeholder{display:grid;place-items:center;background:#172229;color:#a2b0b8;text-align:center;padding:24px;font-size:16px}
+.chat-viewport{display:flex;width:100%;min-width:396px;height:100%;overflow:hidden}
+#main{display:flex;flex-direction:column;width:100%;min-width:396px;height:100%;overflow:hidden;background:#0b141a}
+#relay-chat-header{min-width:396px;flex-wrap:nowrap;overflow:hidden}
+#relay-header-title{flex:1 1 auto;min-width:300px;overflow:hidden}
+.contact-name,.contact-status{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.contact-name{font-size:17px}.contact-status{font-size:13px;color:#a2b0b8;margin-top:4px}
+#relay-header-actions{flex-shrink:0}
+.messages{flex:1;min-height:0;padding:18px;overflow:auto;overscroll-behavior:contain}
+.fixture-notice{max-width:420px;margin:0 auto 24px;padding:10px 14px;border-radius:8px;background:#202c33;color:#b9c9d0;font-size:13px;line-height:1.4;text-align:center}
+.bubble{width:fit-content;max-width:82%;margin:0 0 16px;padding:10px 12px;border-radius:9px;background:#202c33;font-size:16px;line-height:1.45;overflow-wrap:anywhere}
+.bubble.outgoing{margin-left:auto;background:#005c4b}
+.bubble time{display:block;text-align:right;margin-top:4px;font-size:11px;color:#adbfbc}
+#relay-composer{display:flex;align-items:center;flex:0 0 auto;min-width:396px;gap:6px;padding:10px 12px;background:#202c33}
+.composer-field{flex:1;min-width:220px;display:flex}
+#relay-fixture-draft{display:block;flex:1;width:100%;min-width:0;padding:12px;border:0;border-radius:8px;background:#2a3942;color:inherit;font:18px sans-serif}
+.send{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border:0;border-radius:50%;background:#00a884;color:#fff;font-size:22px}
 </style>
-<div id="app"><div class="desktop"><div id="side"><header>Chats</header><div id="pane-side"><div role="row" tabindex="0" id="relay-chat-row">Local chat <button id="relay-row-menu" aria-label="Chat menu">⋮</button></div></div></div><section class="placeholder"></section></div></div>
-<button hidden id="relay-fixture-replace">Replace chat</button>
+<!-- Deliberately synthetic desktop constraints for native adapter regression tests. -->
+<div id="app"><div class="desktop">
+  <nav id="relay-desktop-rail" aria-label="Local fixture desktop navigation">
+    <button type="button" class="rail-button" aria-label="Fixture chats">◉</button>
+    <button type="button" class="rail-button" aria-label="Fixture updates">◌</button>
+    <button type="button" class="rail-button rail-end" aria-label="Fixture settings">⚙</button>
+  </nav>
+  <div class="workspace"><section class="list-shell"><div id="side">
+    <header id="relay-side-header"><span>Chats</span><div class="header-actions"><button type="button" class="icon-button" aria-label="Fixture new chat">＋</button><button type="button" class="icon-button" aria-label="Fixture list menu">⋮</button></div></header>
+    <div class="search-wrap"><input id="relay-fixture-search" aria-label="Search local fixture" placeholder="Search"></div>
+    <div class="filters"><button type="button" class="filter" aria-pressed="true">All</button><button type="button" class="filter">Unread</button><button type="button" class="filter">Groups</button></div>
+    <div id="pane-side" role="grid" aria-label="Local fixture conversations">
+      <div role="row" tabindex="0" class="chat-row" id="relay-chat-row"><span class="avatar" aria-hidden="true">LC</span><span class="row-copy"><span class="row-title">Local chat</span><span class="row-preview">Open the local conversation fixture</span></span><button type="button" id="relay-row-menu" aria-label="Chat menu">⋮</button></div>
+    </div>
+  </div></section><section class="placeholder">Local layout fixture<br>No account or network messages</section></div>
+</div></div>
+<button type="button" hidden id="relay-fixture-replace">Replace chat</button>
 <script>
 let identity=0;
+const fixtureRows=document.getElementById('pane-side');
+for(let index=2;index<=16;index++){
+ const row=document.createElement('div');
+ row.className='chat-row';row.setAttribute('role','row');row.tabIndex=0;
+ row.innerHTML='<span class="avatar" aria-hidden="true">'+String(index).padStart(2,'0')+'</span><span class="row-copy"><span class="row-title">Local fixture '+index+'</span><span class="row-preview">Synthetic list row for scrolling</span></span>';
+ row.addEventListener('click',()=>queueMicrotask(()=>mount()));
+ fixtureRows.append(row);
+}
 function mount(replace=false){
  let main=document.getElementById('main');
  if(main&&!replace)return;
  const old=main?.closest('.chat-shell');
  const draft=main?.querySelector('input')?.value||'';
  const wrapper=document.createElement('section');wrapper.className='chat-shell';
- wrapper.innerHTML='<div id="main"><header><span>Local chat</span></header><div class="messages">Local conversation fixture</div><footer><input id="relay-fixture-draft" aria-label="Message"><button class="send">Send</button></footer></div>';
+ wrapper.innerHTML='<div class="chat-viewport"><div id="main"><header id="relay-chat-header"><span class="avatar" aria-hidden="true">LC</span><div id="relay-header-title" role="button" tabindex="0"><span class="contact-name" dir="auto">Local conversation with a deliberately long title</span><span class="contact-status">Synthetic local fixture</span></div><div id="relay-header-actions" class="header-actions"><button type="button" class="icon-button" aria-label="Fixture call">♧</button><button type="button" class="icon-button" aria-label="Fixture search">⌕</button><button type="button" class="icon-button" aria-label="Fixture conversation menu">⋮</button></div></header><div id="relay-message-scroll" class="messages"><div class="fixture-notice">Local layout fixture. No account, contacts, or messages are connected.</div></div><footer id="relay-composer"><button type="button" class="icon-button" aria-label="Fixture attachment">＋</button><div class="composer-field"><input id="relay-fixture-draft" aria-label="Message" placeholder="Message" autocomplete="off"></div><button type="button" class="send" aria-label="Fixture send control">➤</button></footer></div></div>';
  wrapper.querySelector('#main').dataset.fixtureIdentity=String(++identity);
  wrapper.querySelector('input').value=draft;
+ const messages=wrapper.querySelector('.messages');
+ for(let index=1;index<=18;index++){
+  const bubble=document.createElement('div');
+  bubble.className='bubble'+(index%2?'':' outgoing');
+  bubble.innerHTML='Local fixture message '+index+'. This text exercises wrapping and independent conversation scrolling.<time>12:'+String(index).padStart(2,'0')+'</time>';
+  messages.append(bubble);
+ }
  if(old)old.replaceWith(wrapper);else document.querySelector('.placeholder').replaceWith(wrapper);
+ messages.scrollTop=messages.scrollHeight;
 }
 document.getElementById('relay-row-menu').addEventListener('click',event=>event.stopPropagation());
 document.getElementById('relay-chat-row').addEventListener('click',()=>queueMicrotask(()=>mount()));

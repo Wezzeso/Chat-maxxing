@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.5
+
+- Use five equally spaced service icons with 44 px hit areas in a 56 px bottom bar; keep the wide sidebar unchanged.
+- Hide compact Sleep and Quit utility buttons while retaining native service menus and window close.
+- Refine WhatsApp's mobile layout with 56 px headers, truncated titles, 44 px controls, independent scrolling, and a composer anchored through flex layout at 100% zoom.
+- Retain the original navigation controls in a dismissible 72 px overlay opened from the chat-list header.
+- Restore the last chat row's focus on Back or Escape without scrolling or replacing the document.
+- Rename **Single pane** to **Mobile layout** and skip message-list mutations in the paused-when-hidden layout observer.
+
 ## 0.3.4
 
 - Replace WhatsApp page scaling with a single-pane layout at widths of 748 CSS pixels or less; keep zoom at 100%.

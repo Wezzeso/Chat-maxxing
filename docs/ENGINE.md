@@ -6,32 +6,45 @@ an embedded native WebKitWebView for each opened service. The app never starts
 Firefox, loads an extension, or renders its shell as an HTML page.
 
 The shell uses a 56 px sidebar at 640 × 460 logical pixels and above. Narrower
-or shorter windows use a 48 px bottom bar with 36 px buttons; all seven controls
-fit down to the 320 × 240 minimum. Initial windows and sign-in popups fit the
-monitor workarea. GTK handles display scaling. Resize notifications are
+or shorter windows use a 56 px bottom bar with five equally spaced service
+icons and 44 px hit areas. Sleep and Quit utility buttons are hidden in this
+mode; native service context menus and window close remain available. The wide
+sidebar is unchanged. Initial windows and sign-in popups fit the monitor
+workarea. GTK handles display scaling. Resize notifications are
 coalesced, and layout changes run only when the mode changes. The same widgets
 and WebViews are kept without another navigation. Provider websites control
 their own page layouts.
 
-WhatsApp uses a single-pane layout at viewport widths of 748 CSS pixels or
-less. The chat list or the selected chat occupies the available width, with
-WebKit zoom fixed at 100% and normal text sizing. Clicking a chat row reveals
-the existing chat pane; an app-provided back arrow returns to the existing
-list. The document and composer remain mounted to preserve their state and
-drafts. Wide windows restore both panes. The native **Single pane** item in the
-WhatsApp logo menu controls this behavior and is enabled by default. Its
-`compact_whatsapp` setting replaces the earlier `fit_whatsapp` preference,
-which is ignored.
+WhatsApp uses a mobile layout at viewport widths of 748 CSS pixels or less,
+with WebKit zoom fixed at 100% and normal text sizing. The chat list or selected
+chat fills the view. Headers are 56 px high, long titles truncate, and header
+and composer controls have 44 px hit areas. The list and messages scroll
+independently; the composer remains at the bottom through a flex layout rather
+than viewport-fixed positioning. Clicking a chat row reveals the existing chat
+pane. The app-provided back arrow or Escape restores the list and the last
+row's focus without scrolling. The document and composer remain mounted to
+preserve their state and drafts.
+
+The original WhatsApp navigation rail is retained and hidden in narrow mode.
+A menu button in the list header opens it as a 72 px overlay; its original
+controls remain usable. The scrim and Escape dismiss it. Wide windows restore
+both panes, the original navigation rail, and normal provider styling. The
+native **Mobile layout** item in the WhatsApp logo menu controls the adapter
+and is enabled by default through `compact_whatsapp`. The earlier
+`fit_whatsapp` preference is ignored.
 
 The adapter runs only on the WhatsApp origin in an isolated JavaScript world.
 A no-op registered user script keeps that world alive between evaluations;
 related sign-in popups receive only the no-op, not the pane adapter.
-CSS uses app-owned attributes. A structural `MutationObserver` coalesces work
-through `requestAnimationFrame` only while the narrow WhatsApp view is visible;
-it pauses when the service is hidden, the window is wide, or the option is
-disabled. There is no polling, additional WebView, daemon, or app IPC service.
+App-owned CSS attributes scope the layout changes and are removed when the
+window is wide or the option is disabled. A structural `MutationObserver`
+coalesces work through `requestAnimationFrame` and skips mutations inside the
+message list. It runs only while the narrow WhatsApp view is visible and pauses
+when the service is hidden, the window is wide, or the option is disabled.
+The adapter adds no animation, timer, polling, additional WebView, daemon, or
+app IPC service.
 The adapter relies on undocumented provider DOM hooks (`#side`, `#pane-side`,
-`#main`, and the chat header). Unknown layouts keep the regular provider page;
+`#main`, the chat header, and `nav` or navigation roles). Unknown layouts keep the regular provider page;
 future WhatsApp changes may require adapter updates. Signed-in WhatsApp
 behavior remains unverified.
 

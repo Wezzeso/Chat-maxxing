@@ -1,6 +1,7 @@
 //! Layout decisions use GTK logical pixels; resizing never reloads a service.
 pub const MIN_WIDTH: i32 = 320;
 pub const MIN_HEIGHT: i32 = 240;
+pub const BOTTOM_HEIGHT: i32 = 56;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {

@@ -330,10 +330,10 @@ def run_self_test(binary, output):
     for expected in ["retainedAfter35Seconds", "longIdleViewDestroyed", "latestSelectionWins"]:
         if facts.get(expected) is not True:
             raise RuntimeError("Native switching fixture did not confirm " + expected)
-    for expected in ["singlePaneNavigation", "whatsappDraftPreserved", "normalZoomThroughout", "spaReplacementRecovered", "resizePreservedLoadedViews"]:
+    for expected in ["singlePaneNavigation", "whatsappDraftPreserved", "normalZoomThroughout", "spaReplacementRecovered", "resizePreservedLoadedViews", "mobileControlsFit", "focusAndScrollRetained", "navigationDrawerWorks"]:
         if facts.get(expected) is not True:
             raise RuntimeError("WhatsApp single-pane fixture did not confirm " + expected)
-    if facts.get("singlePaneSteps") != 12 or facts.get("resizeExtraDocumentLoads") != 0:
+    if facts.get("singlePaneSteps") != 19 or facts.get("resizeExtraDocumentLoads") != 0:
         raise RuntimeError("WhatsApp single-pane fixture reloaded or skipped navigation")
     if facts.get("warmSwitches") != 40 or facts.get("warmExtraDocumentLoads") != 0:
         raise RuntimeError("Native switching fixture reloaded warm pages")

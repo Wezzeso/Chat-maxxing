@@ -55,22 +55,27 @@ def layout_checks(window, accessibility):
     if len(frames) != 1 or len(clients) != 1:
         raise RuntimeError("Could not identify this native window's frame and allocated client area")
     frame, client = frames[0]["bounds"], clients[0]["bounds"]
+    compact = window["width"] < 640 or window["height"] < 460
+    expected = SERVICES if compact else CONTROLS
     found = {name: [node for node in nodes if "button" in node["role"] and node["name"] == name]
-             for name in CONTROLS}
-    checks = {"sevenNativeButtons": all(len(items) == 1 for items in found.values())}
-    if not checks["sevenNativeButtons"]:
+             for name in expected}
+    checks = {"expectedNativeButtons": all(len(items) == 1 for items in found.values())}
+    if not checks["expectedNativeButtons"]:
         return {"checks": checks, "client": client, "frame": frame, "nodes": nodes}
-    buttons = {name: found[name][0].get("bounds", {}) for name in CONTROLS}
+    buttons = {name: found[name][0].get("bounds", {}) for name in expected}
     if any(not box for box in buttons.values()):
         raise RuntimeError("A native control has no allocated accessibility bounds")
     compact = window["width"] < 640 or window["height"] < 460
     boxes = list(buttons.values())
+    if compact:
+        checks["fiveServiceTabs"] = len(boxes) == 5
+        checks["equalTabWidths"] = max(box["width"] for box in boxes) - min(box["width"] for box in boxes) <= 1
     checks.update({
         "buttonsInsideFrame": all(contains(frame, box) for box in boxes),
         "buttonsInsideClient": all(contains(client, box) for box in boxes),
         "buttonsDoNotOverlap": all(not overlaps(a, b) for a, b in itertools.combinations(boxes, 2)),
-        "minimumButtonSize": all(box["width"] >= (36 if compact else 44)
-                                 and box["height"] >= (36 if compact else 44) for box in boxes),
+        "minimumButtonSize": all(box["width"] >= 44
+                                 and box["height"] >= 44 for box in boxes),
     })
     axis, cross = ("x", "y") if compact else ("y", "x")
     dimension = "height" if compact else "width"

@@ -138,6 +138,14 @@ extern "C" {
     pub fn gtk_box_new(orientation: c_int, spacing: c_int) -> Ptr;
     pub fn gtk_box_set_spacing(container: Ptr, spacing: c_int);
     pub fn gtk_box_reorder_child(container: Ptr, child: Ptr, position: c_int);
+    pub fn gtk_box_set_child_packing(
+        container: Ptr,
+        child: Ptr,
+        expand: Bool,
+        fill: Bool,
+        padding: c_uint,
+        pack_type: c_int,
+    );
     pub fn gtk_orientable_set_orientation(orientable: Ptr, orientation: c_int);
     pub fn gtk_box_pack_start(
         container: Ptr,
@@ -170,6 +178,7 @@ extern "C" {
     pub fn gtk_container_remove(container: Ptr, widget: Ptr);
     pub fn gtk_container_set_border_width(container: Ptr, border_width: c_uint);
     pub fn gtk_widget_show_all(widget: Ptr);
+    pub fn gtk_widget_set_no_show_all(widget: Ptr, no_show_all: Bool);
     pub fn gtk_widget_show(widget: Ptr);
     pub fn gtk_widget_hide(widget: Ptr);
     pub fn gtk_widget_destroy(widget: Ptr);
